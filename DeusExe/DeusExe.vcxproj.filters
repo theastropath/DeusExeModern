@@ -54,7 +54,19 @@
     <ClCompile Include="FileManagerDeusExe.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ConfigCacheDeusExe.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CrashReport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Diagnostics.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="NativeHooks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PluginManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="FreeSpaceFix.cpp">
@@ -95,7 +107,22 @@
     <ClInclude Include="FileManagerDeusExe.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ConfigCacheDeusExe.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CrashReport.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Diagnostics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="NativeHooks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PluginManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DeusExePlugin.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="FreeSpaceFix.h">
@@ -124,15 +151,16 @@
     <None Include="deusex.png">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="dx.png">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="dx2.png">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <Image Include="bitmap1.bmp">
-      <Filter>Resource Files</Filter>
-    </Image>
   </ItemGroup>
 </Project>

@@ -28,14 +28,115 @@
 			<dd>Skips the launcher dialog and immediately starts the game.</dd>
 			<dt>-localdata</dt>
 			<dd>Uses the game directory, instead of 'Documents', for configuration data, save games, etc. Please make sure you have write permissions.</dd>
+			<dt>-gamename &lt;name&gt;</dt>
+			<dd>Keeps configuration data, save games, etc. in a subdirectory of that name, so several mods can be played side by side without overwriting each other's settings. For example, <code>-gamename "GMDXAE"</code> uses 'Documents\Deus Ex\GMDXAE', or the same subdirectory of the game directory when combined with -localdata. Settings are read from and written to '&lt;name&gt;.ini' instead of the game's own ini; the first time a name is used, that file is created from the existing settings.</dd>
 		</dl>
-		<h3>Known issues / left to fix / todo. Unless marked as [Deus Exe], this is an issue with the original game.</h3>
+
+		<h3>Plugins</h3>
+		<p>
+		Deus Exe can load plugin DLLs of your own before the game starts, and notifies them at each step of the start-up, so a plugin can hook the game from the very beginning. This is meant for tools and mods that need to run native code; nothing needs to be installed for the game itself to work.
+		</p>
+
+		<h4>Enabling plugins</h4>
+		<p>
+		List the plugins in 'PluginList.ini', in the same 'System' directory as the executable, with one <code>Plugin</code> line per DLL. Deus Exe uses its own file for this, so the game's ini (which is redirected to 'Documents') is left untouched.
+		</p>
+		<pre>
+[DeusExe.Plugins]
+Plugin=MyDebugPlugin.dll
+Plugin=C:\Tools\AnotherPlugin.dll
+		</pre>
+		<p>
+		Relative paths are resolved against the 'System' directory, absolute paths are used as-is, and the plugins are called in the order they're listed. A plugin's own dependencies are looked up in its folder. Loading is logged to the game log, including the reason a DLL was skipped; at most 32 plugins are loaded. Remove or comment out the line to disable a plugin.
+		</p>
+
+		<h4>Writing a plugin</h4>
+		<p>
+		Build a DLL that includes 'DeusExePlugin.h' (in the DeusExe source) and exports a single, undecorated entry point:
+		</p>
+		<pre>
+#include "DeusExePlugin.h"
+
+extern "C" __declspec(dllexport)
+void DeusExePluginMain(unsigned int AbiVersion, const DeusExePluginContext* Context)
+{
+    if (AbiVersion != DEUSEXE_PLUGIN_ABI_VERSION)
+        return; //Built against a different launcher ABI
+
+    if (Context-&gt;Event == DeusExePluginEvent_ViewportCreated)
+        MessageBox((HWND)Context-&gt;Window, L"Hello", L"Plugin", MB_OK);
+}</pre>
+		<p>
+		The entry point is called once per event, with a context holding the command line and, once they exist, the engine, the viewport and the game window. Anything not available yet for a given event is null, and everything in the context is owned by Deus Exe, so don't free it. A DLL that doesn't export <code>DeusExePluginMain</code> is still loaded, so it can do its work from <code>DllMain</code>, but it receives no events. Always check <code>AbiVersion</code> first: it's passed as an argument rather than in the context, so a plugin built for an older Deus Exe can bail out before touching a struct whose layout may have changed.
+		</p>
+
+		<h4>Events</h4>
+		<dl>
+			<dt>DeusExePluginEvent_PreAppInit</dt>
+			<dd>The plugins have just been loaded, before the game core is initialized. The earliest point, for low-level hooking; only the command line is available.</dd>
+			<dt>DeusExePluginEvent_PostAppInit</dt>
+			<dd>The game core (configuration, logging) is up. The engine doesn't exist yet.</dd>
+			<dt>DeusExePluginEvent_PreEngineInit</dt>
+			<dd>The game engine has been created but not yet initialized. <code>Engine</code> is valid.</dd>
+			<dt>DeusExePluginEvent_PostEngineInit</dt>
+			<dd>The game engine has been initialized. <code>Engine</code> is valid.</dd>
+			<dt>DeusExePluginEvent_ViewportCreated</dt>
+			<dd>The game viewport and window have been created. <code>Engine</code>, <code>Viewport</code> and <code>Window</code> are valid.</dd>
+			<dt>DeusExePluginEvent_PreMainLoop</dt>
+			<dd>Just before the main game loop starts running.</dd>
+			<dt>DeusExePluginEvent_Shutdown</dt>
+			<dd>Deus Exe is shutting down and the plugins are about to be unloaded. The last chance to clean up.</dd>
+		</dl>
+
+		<h3>Technical notes</h3>
 		<ul>
-			<li>[Deus Exe] If you start using the -localdata command-line option and then click the button to change renderers in the in-game options screen, Deus Exe will restart without using -localdata.</li>
-			<li>In full-screen mode, when opening a menu for the first time after a level switch, the mouse cursor will be positioned in the top-left corner.</li>
-			<li>Keyboard unresponsive after alt+tab in windowed mode</li>
+			<li>Deus Exe runs with Data Execution Prevention (DEP) disabled, both in the executable's headers and at start-up. The game's 'Galaxy' audio subsystem executes code from data pages and crashes otherwise. This is logged to the game log.</li>
 		</ul>
+
 		<h3>Changelog</h3>
+		<h4>Version 9.0.1.0 (september 18, 2026)</h4>
+		<ul>
+			<li>Added an 'Open save folder' link to the launcher, which opens the directory holding the configuration data and save games, following <code>-localdata</code> and <code>-gamename</code>. Under WINE/Proton it opens the desktop's own file manager rather than WINE's.</li>
+			<li>The script package behind the widescreen subtitle fix is now named 'SubtitleFix.u' instead of 'DeusExe.u'. Delete the leftover 'DeusExe.u' from the 'System' directory, it is no longer used.</li>
+		</ul>
+		<h4>Version 9 (august 17, 2026)</h4>
+		<ul>
+			<li>Added the <code>-gamename &lt;name&gt;</code> command-line option, so several mods can be played side by side without overwriting each other's configuration data, save games and settings. See 'New command-line options' above.</li>
+			<li><code>-localdata</code> and <code>-gamename</code> are now remembered when the engine relaunches itself, e.g. after a video mode change, so the same data directory keeps being used.</li>
+			<li>Added plugin support: DLLs listed in 'PluginList.ini' are loaded before the game starts and are notified at each step of the start-up. See 'Plugins' above.</li>
+			<li>Conversation packages ('DeusExCon*.u') in a data directory now override the copies in 'System'. The game loads these by bare name and keeps the first copy it reads for the whole session, so previously the 'System' copy could win and a mod's conversations would be ignored.</li>
+			<li>Localization (.int) overrides are now applied from the very first file access. The game reads some .int files, notably its own 'DeusEx.int', before the data directory list used to be built, and as it keeps whatever it reads first, a mod's .int file could end up unused.</li>
+			<li>Rewrote the frame limiter. The game is now ticked every iteration with the actually elapsed time, and the frame rate is capped by sleeping away the remainder of the frame instead of by skipping ticks. The game's own maximum tick rate (e.g. a server's) is taken into account as well.</li>
+			<li>The engine's current tick rate is now updated, so in-game frame rate displays show a value again.</li>
+			<li>
+				Alt+Tab and focus fixes:
+				<ul>
+					<li>The game is restored when a renderer left it minimized after switching back to it.</li>
+					<li>The click that gives the game focus back is no longer passed on to the game.</li>
+					<li>The mouse cursor is only hidden while the game actually has focus, so it no longer disappears over the game's window when another window is in front of it.</li>
+					<li>The Windows mouse cursor no longer reappears on top of the game after alt+tabbing away and back.</li>
+					<li>In exclusive full-screen mode the cursor is confined to the game's monitor. In a plain window it is only confined during camera control, so the window's border and title bar can still be reached while a menu is open.</li>
+					<li>The cursor is released again whenever the game loses focus or the window closes, so it is never left confined or invisible.</li>
+					<li>When the renderer recreates the game window, which happens on a video mode change, raw input and the cursor handling are re-attached to the new window.</li>
+					<li>Fixed cursor position not accounting for OTP UI Scaling, which makes the cursor not drift to the top-left corner when the game window regains focus.</li>
+					<li>Fixed modifier keys not being released on focus loss (on alt+tab and focus regain, the game missed alt release).</li>
+				</ul>
+			</li>
+			<li>The 'EditActor' command now also accepts <code>Name=&lt;actor name&gt;</code> besides <code>Class=</code>.</li>
+			<li>The FPS limit is now also written to 'dxgi.maxFrameRate' and 'd3d9.maxFrameRate' in 'dxvk.conf', if such a file is present in the 'System' directory.</li>
+			<li>The checkboxes in the 'Data Directories' dialog are now drawn and handled by Deus Exe itself, so checking a directory also (un)checks its subdirectories when running under WINE/Proton.</li>
+			<li>The 'Data Directories' dialog now recognizes localization files regardless of how the extension is capitalized, so a '.INT' entry is no longer treated as a package directory.</li>
+			<li>
+				Added an 'Enable verbose logging' option to the configuration dialog, which makes it into a livelog and not a buffered log.
+				<ul>
+					<li>Attempts to trace back every faulting function.</li>
+					<li>Catches map changes and prints the loading stages.</li>
+					<li>Logs UE's call history (msgbox) to the logfile on fatal fault.</li>
+				</ul>
+			</li>
+			<li>Fixed raw mouse setting not being saved properly to the ini.</li>
+			<li>Switched to Visual Studio 2022, make sure to <a href="https://aka.ms/vs/17/release/vc_redist.x86.exe">update your runtimes</a>.</li>
+		</ul>
 		<h4>Version 8.1 (februari 20, 2016)</h4>
 		<ul>
 			<li>Fixed alt+enter behavior in borderless windowed full-screen mode.</li>

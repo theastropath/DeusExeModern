@@ -11,17 +11,7 @@ decltype(CDataDirDialog::sm_SupportedExtensions) CDataDirDialog::sm_SupportedExt
     L"*.int", L"*.u", L"*.utx", L"*.umx", L"*.dx", L"*.unr", L"*.uax",
 };
 
-CDataDirDialog::CDataDirDialog()
-{
-
-}
-
-CDataDirDialog::~CDataDirDialog()
-{
-
-};
-
-bool CDataDirDialog::Show(const HWND hWndParent) const
+bool CDataDirDialog::Show(const HWND hWndParent)
 {
     return DialogBoxParam(GetModuleHandle(0), MAKEINTRESOURCE(IDD_DATADIRS), hWndParent, DataDirDialogProc, reinterpret_cast<LPARAM>(this)) == 1;
 }
@@ -32,7 +22,7 @@ void CDataDirDialog::ProcessDirFiles(const wchar_t* const pszDir, const wchar_t*
     assert(pszRelDir);
 
     wchar_t szRelativePath[MAX_PATH];
-    wcscpy_s(szRelativePath, pszRelDir);
+    wcsncpy_s(szRelativePath, pszRelDir, _TRUNCATE);
     wchar_t* const pszRelFileName = szRelativePath + wcslen(szRelativePath);
     const size_t iCharsLeft = _countof(szRelativePath) - (pszRelFileName - szRelativePath);
 
@@ -40,7 +30,10 @@ void CDataDirDialog::ProcessDirFiles(const wchar_t* const pszDir, const wchar_t*
     for(const wchar_t* const pszExt : sm_SupportedExtensions)
     {
         wchar_t szFileSpec[MAX_PATH];
-        PathCombine(szFileSpec, pszDir, pszExt);
+        if(!PathCombine(szFileSpec, pszDir, pszExt)) //Leaves the buffer empty, which would search the current directory instead
+        {
+            continue;
+        }
         WIN32_FIND_DATA FindData;
         const HANDLE hDir = FindFirstFile(szFileSpec, &FindData);
         if(hDir != INVALID_HANDLE_VALUE)
@@ -49,8 +42,7 @@ void CDataDirDialog::ProcessDirFiles(const wchar_t* const pszDir, const wchar_t*
             {
                 if(!(FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
                 {
-                    //Add extension
-                    wcscpy_s(pszRelFileName, iCharsLeft, pszExt);
+                    wcsncpy_s(pszRelFileName, iCharsLeft, pszExt, _TRUNCATE);
                     AddItemToList(szRelativePath);
                     break;
                 }
@@ -61,43 +53,91 @@ void CDataDirDialog::ProcessDirFiles(const wchar_t* const pszDir, const wchar_t*
     }
 }
 
-void CDataDirDialog::SearchDirs(const wchar_t* const pszTargetDir, const wchar_t* const pszRootDir)
+bool CDataDirDialog::GetDirIdentity(const wchar_t* const pszDir, SDirIdentity& Identity)
+{
+    assert(pszDir);
+
+    //FILE_FLAG_BACKUP_SEMANTICS is needed to open a directory. Reparse points are followed, so a symlink or junction identifies its target.
+    const HANDLE hDir = CreateFile(pszDir, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if(hDir == INVALID_HANDLE_VALUE)
+    {
+        return false;
+    }
+
+    BY_HANDLE_FILE_INFORMATION FileInfo;
+    const bool bSucceeded = GetFileInformationByHandle(hDir, &FileInfo) != FALSE;
+    CloseHandle(hDir);
+
+    if(bSucceeded)
+    {
+        Identity = { FileInfo.dwVolumeSerialNumber, FileInfo.nFileIndexHigh, FileInfo.nFileIndexLow };
+    }
+    return bSucceeded;
+}
+
+void CDataDirDialog::SearchDirs(const wchar_t* const pszTargetDir, const wchar_t* const pszRootDir, const size_t iDepth)
 {
     assert(pszTargetDir);
     assert(pszRootDir);
 
-    //Build search string
+    if(iDepth >= sm_iMaxSearchDepth)
+    {
+        return;
+    }
+
     wchar_t szTargetPath[MAX_PATH];
-    PathCombine(szTargetPath, pszTargetDir, L"*.");
+    if(!PathCombine(szTargetPath, pszTargetDir, L"*."))
+    {
+        return;
+    }
+
+    //Symlinks and junctions are followed, so stop when one leads back into a directory we're already inside: that would recurse forever.
+    //Filesystems that don't report a usable identity aren't tracked; the depth limit still bounds the search.
+    SDirIdentity Identity;
+    const bool bTrackIdentity = GetDirIdentity(pszTargetDir, Identity);
+    if(bTrackIdentity)
+    {
+        if(std::find(m_AncestorDirs.cbegin(), m_AncestorDirs.cend(), Identity) != m_AncestorDirs.cend())
+        {
+            return;
+        }
+        m_AncestorDirs.push_back(Identity);
+    }
+
     WIN32_FIND_DATA FindData;
     const HANDLE hDir = FindFirstFile(szTargetPath, &FindData);
 
-    //Find subdirectories
     if(hDir != INVALID_HANDLE_VALUE)
     {
         do
         {
+            //Symlinked and junctioned directories are included: users link data directories in from elsewhere. Loops are handled by the identity check above.
             if((FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && wcscmp(FindData.cFileName, L"..") != 0 && wcscmp(FindData.cFileName, L".") != 0)
             {
                 wchar_t szChildPath[MAX_PATH];
-                PathCombine(szChildPath, pszTargetDir, FindData.cFileName);
+                if(!PathCombine(szChildPath, pszTargetDir, FindData.cFileName))
+                {
+                    continue;
+                }
 
-                //Convert to relative path
                 wchar_t szRelativePath[MAX_PATH];
-                PathRelativePathTo(szRelativePath, pszRootDir, FILE_ATTRIBUTE_DIRECTORY, szChildPath, FILE_ATTRIBUTE_DIRECTORY);
+                if(!PathRelativePathTo(szRelativePath, pszRootDir, FILE_ATTRIBUTE_DIRECTORY, szChildPath, FILE_ATTRIBUTE_DIRECTORY)) //Leaves the buffer undefined on failure
+                {
+                    continue;
+                }
 
                 //Extra check for "." as we're relative to System, and DefaultDataDirs is not
                 if(wcscmp(szRelativePath, L".") == 0) 
                 {
                     continue;
                 }
-                //Check if directory is one of the standard ones, if so don't process it any further
+                //Standard directories aren't the user's to change, so don't process them any further
                 if(m_DefaultDataDirs.find(szRelativePath) != m_DefaultDataDirs.cend())
                 {
                     continue;
                 }
 
-                SearchDirs(szChildPath, pszRootDir);
+                SearchDirs(szChildPath, pszRootDir, iDepth + 1);
 
                 PathAddBackslash(szRelativePath);
                 ProcessDirFiles(szChildPath, szRelativePath);
@@ -107,25 +147,29 @@ void CDataDirDialog::SearchDirs(const wchar_t* const pszTargetDir, const wchar_t
 
         FindClose(hDir);
     }
+
+    if(bTrackIdentity)
+    {
+        m_AncestorDirs.pop_back();
+    }
 }
 
 void CDataDirDialog::FindDefaultItems()
 {
-    //Store directories from default.ini in map so we ignore then
-
-    TMultiMap<FString, FString>* pSection = GConfig->GetSectionPrivate(L"Core.System", FALSE, TRUE, L"default.ini");
-    assert(pSection);
-
-    TArray<FString> Defaults;
-    pSection->MultiFind(sm_pszPaths, Defaults);
-    for(int i = 0; i < Defaults.Num(); i++)
+    TMultiMap<FString, FString>* const pSection = GConfig->GetSectionPrivate(L"Core.System", FALSE, TRUE, L"default.ini");
+    if(pSection) //Absent in an install without a default.ini
     {
-        //Convert format like "..\Music\*.umx" to "..\Music"
-        wchar_t szBuf[MAX_PATH];
-        wcscpy_s(szBuf, *Defaults(i));
-        PathRemoveFileSpec(szBuf);
+        TArray<FString> Defaults;
+        pSection->MultiFind(sm_pszPaths, Defaults);
+        for(int i = 0; i < Defaults.Num(); i++)
+        {
+            //Convert format like "..\Music\*.umx" to "..\Music"
+            wchar_t szBuf[MAX_PATH];
+            wcsncpy_s(szBuf, *Defaults(i), _TRUNCATE); //Truncate rather than abort on an over-long ini entry
+            PathRemoveFileSpec(szBuf);
 
-        m_DefaultDataDirs.insert(szBuf);
+            m_DefaultDataDirs.insert(szBuf);
+        }
     }
 
     const wchar_t* const pszCDPath = GConfig->GetStr(L"Engine.Engine", L"CdPath");
@@ -138,19 +182,27 @@ void CDataDirDialog::FindDefaultItems()
 
 void CDataDirDialog::AddItemsFromConfig()
 {
-    //Find current items
+    //An entry with no directory part adds nothing and returns the root; checking that would tick the whole tree
+    const auto AddCheckedItem = [this](const wchar_t* const pszPath)
+    {
+        const HTREEITEM hItem = AddItemToList(pszPath);
+        if(hItem != m_TreeView.GetRoot())
+        {
+            m_TreeView.ApplyCheckState(hItem, CFancyTreeView::EItemState::CHECKED);
+        }
+    };
+
     assert(GSys);
     for(int i = 0; i < GSys->Paths.Num(); i++)
     {
         //Convert format like "..\Music\*.umx" to "..\Music"
         wchar_t szBuf[MAX_PATH];
-        wcscpy_s(szBuf, *GSys->Paths(i));
+        wcsncpy_s(szBuf, *GSys->Paths(i), _TRUNCATE);
         PathRemoveFileSpec(szBuf);
 
         if(m_DefaultDataDirs.find(szBuf) == m_DefaultDataDirs.cend()) //Don't show the default entries in the list
         {
-            const HTREEITEM hItem = AddItemToList(*GSys->Paths(i));
-            m_TreeView.SetItemState(hItem, CFancyTreeView::EItemState::CHECKED);
+            AddCheckedItem(*GSys->Paths(i));
         }
     }
 
@@ -163,25 +215,24 @@ void CDataDirDialog::AddItemsFromConfig()
         for(int i = IntPaths.Num() - 1; i >= 0; i--)
         {
             //Never in a default data directory as we don't give users a way to add .int files there
-            const HTREEITEM hItem = AddItemToList(*IntPaths(i));
-            m_TreeView.SetItemState(hItem, CFancyTreeView::EItemState::CHECKED);
+            AddCheckedItem(*IntPaths(i));
         }
     }
 }
 
 void CDataDirDialog::PopulateList()
 {   
-    wchar_t szCurrentDir[MAX_PATH];
-
     m_bAddTopLevelDirsOnly = true; //Add top level dirs using .ini file priority
     AddItemsFromConfig();
     m_bAddTopLevelDirsOnly = false;
-    
-    //Search directories
-    GetCurrentDirectory(_countof(szCurrentDir),szCurrentDir);
+
+    //Search directories. Paths in the tree are relative to System, matching the ini's own entries.
+    wchar_t szSystemDir[MAX_PATH];
     wchar_t szDirUp[MAX_PATH];
-    PathCombine(szDirUp,szCurrentDir,L"..");
-    SearchDirs(szDirUp,szCurrentDir);
+    if(Misc::GetGameSystemDir(szSystemDir) && PathCombine(szDirUp, szSystemDir, L"..")) //PathCombine empties the buffer on failure, which would scan the current directory instead
+    {
+        SearchDirs(szDirUp, szSystemDir);
+    }
 
     AddItemsFromConfig(); //Add subdirs using disk priority
 }
@@ -195,7 +246,6 @@ void CDataDirDialog::PopulateConfig() const
     TMultiMap<FString, FString>* const pSectionInt = GConfig->GetSectionPrivate(PROJECTNAME, TRUE, FALSE); //Int files have their own section as we use our own override mechanism
     assert(pSectionInt);
 
-    //Clear list
     pSection->Remove(sm_pszPaths);
     pSectionInt->Remove(FFileManagerDeusExe::sm_pszIntPaths);
 
@@ -206,7 +256,7 @@ void CDataDirDialog::PopulateConfig() const
             wchar_t szTreeText[MAX_PATH];
             m_TreeView.GetItemText(hTreeItem, szTreeText, _countof(szTreeText));
 
-            if(wcscmp(PathFindExtension(szTreeText), L".int") == 0)
+            if(_wcsicmp(PathFindExtension(szTreeText), L".int") == 0)
             {
                 pSectionInt->Add(FFileManagerDeusExe::sm_pszIntPaths, szTreeText);
             }
@@ -220,13 +270,14 @@ void CDataDirDialog::PopulateConfig() const
     
     //Re-add default items
     TMultiMap<FString, FString>* const pDefSection = GConfig->GetSectionPrivate(L"Core.System", FALSE, FALSE, L"default.ini");
-    assert(pDefSection);
-
-    TArray<FString> Defaults;
-    pDefSection->MultiFind(sm_pszPaths, Defaults);
-    for(int i = 0; i < Defaults.Num(); i++)
+    if(pDefSection) //Absent in an install without a default.ini
     {
-        pSection->Add(sm_pszPaths, *Defaults(i));
+        TArray<FString> Defaults;
+        pDefSection->MultiFind(sm_pszPaths, Defaults);
+        for(int i = 0; i < Defaults.Num(); i++)
+        {
+            pSection->Add(sm_pszPaths, *Defaults(i));
+        }
     }
 
     GSys->LoadConfig();
@@ -252,7 +303,8 @@ HTREEITEM CDataDirDialog::AddItemToList(const wchar_t* const pszPath)
         else
         {
             wchar_t szBuf[MAX_PATH];
-            wcsncpy_s(szBuf, pszPathComponent, pszNextComponent - pszPathComponent - 1);// -1 to skip backslash
+            const size_t iComponentLen = static_cast<size_t>(pszNextComponent - pszPathComponent) - 1; // -1 to skip backslash
+            wcsncpy_s(szBuf, pszPathComponent, std::min(iComponentLen, _countof(szBuf) - 1));
             hTreeItem = m_TreeView.InsertItemUnique(szBuf, hTreeItem);
         }
 
@@ -277,7 +329,7 @@ INT_PTR CALLBACK CDataDirDialog::DataDirDialogProc(HWND hwndDlg,UINT uMsg,WPARAM
             SetProp(hwndDlg,L"this",reinterpret_cast<HANDLE>(lParam));
             pThis =  reinterpret_cast<CDataDirDialog*>(lParam);
             pThis->m_hWnd = hwndDlg;
-            SendMessage(hwndDlg, WM_SETICON, ICON_BIG,reinterpret_cast<LPARAM>(LoadIcon(reinterpret_cast<HINSTANCE>(GetWindowLong(hwndDlg,GWL_HINSTANCE)), MAKEINTRESOURCE(IDI_ICON))));
+            SendMessage(hwndDlg, WM_SETICON, ICON_BIG,reinterpret_cast<LPARAM>(LoadIcon(reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hwndDlg,GWLP_HINSTANCE)), MAKEINTRESOURCE(IDI_ICON))));
 
             pThis->m_TreeView.Init(GetDlgItem(hwndDlg, IDC_DIRTREE), GetDlgItem(pThis->m_hWnd, IDC_UP), GetDlgItem(pThis->m_hWnd, IDC_DOWN));
 
@@ -296,8 +348,8 @@ INT_PTR CALLBACK CDataDirDialog::DataDirDialogProc(HWND hwndDlg,UINT uMsg,WPARAM
             {
 
             case IDOK:
+                pThis->PopulateConfig(); //Reads the tree-view, so it has to run before the dialog goes away
                 EndDialog(hwndDlg, 1);
-                pThis->PopulateConfig();
                 return TRUE;
 
             case IDCANCEL:
@@ -328,7 +380,7 @@ INT_PTR CALLBACK CDataDirDialog::DataDirDialogProc(HWND hwndDlg,UINT uMsg,WPARAM
         if(pThis && pNMH->hwndFrom == pThis->m_TreeView.GetHWnd())
         {
             const BOOL bResult = pThis->m_TreeView.HandleNotify(pNMH);
-            SetWindowLong(hwndDlg, DWL_MSGRESULT, bResult);
+            SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, bResult);
             return TRUE;
         }
         break;
@@ -337,6 +389,10 @@ INT_PTR CALLBACK CDataDirDialog::DataDirDialogProc(HWND hwndDlg,UINT uMsg,WPARAM
     case WM_CLOSE:
         EndDialog(hwndDlg,0);
         return TRUE;
+
+    case WM_NCDESTROY:
+        RemoveProp(hwndDlg, L"this");
+        break;
     }
 
     return FALSE;

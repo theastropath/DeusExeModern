@@ -1,24 +1,22 @@
 #pragma once
 
-#include <list>
-
 //Pretty much default file manager, but with .int file overrides
 class FFileManagerDeusExe : public FFileManagerWindows
 {
 public:
     static const wchar_t* const sm_pszIntPaths;
 
-    explicit FFileManagerDeusExe();
-    virtual ~FFileManagerDeusExe();
+    FFileManagerDeusExe() = default;
+    virtual ~FFileManagerDeusExe() = default;
 
-    virtual void AfterCoreInit();
+    virtual void AfterCoreInit() {}
     void OnGameStart();
 
     //Used by startup dialog
     virtual bool ToModernFileName(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName, const char op = 'r');
 
-    //We new() this class before the Unreal core is started (instead of creating it on the stack) so we can use derived classes.
-    //As Unreal overrides global operator new with something that requires the core to be running, that's a catch-22 situation and we require our own new operator.
+    //We new() this class before the Unreal core is started so we can use derived classes. Unreal's global operator new
+    //requires the core to be running, hence our own.
     void* operator new(const size_t s)
     {
         return malloc(s);
@@ -37,25 +35,40 @@ protected:
     */  
     bool IntOverride(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName);
 
+    /**
+    Redirects opens of DeusExCon*.u conversation packages to the copy in the highest-priority data directory.
+    Deus Ex loads these by bare name and never releases them, so the origin/System copy can otherwise win.
+    Returns false if the file isn't a conversation package that a data directory provides.
+    */
+    bool ConOverride(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName);
+
 private:
+    void BuildIntPaths(); //(Re)reads the .int override folders from the config's IntPaths entries
+
     std::unique_ptr<std::vector<std::wstring>> m_pIntPaths; //Pointer because we can't allocate on startup
+
+    void BuildConPaths(); //(Re)builds the DeusExCon*.u -> data directory copy redirect map from the search paths
+    void ScanConDir(const wchar_t* const pszDir, std::vector<std::wstring>& ScannedDirs); //!< Adds a directory's conversation packages to the map, unless it was scanned already
+
+    std::unique_ptr<std::unordered_map<std::wstring, std::wstring>> m_pConPaths; //Lower-cased package file name -> winning data directory copy
 
 //From FFileManagerWindows
 public:
     virtual FArchive* CreateFileReader(const wchar_t* Filename, DWORD Flags, FOutputDevice* Error) override;
+    virtual INT FileSize(const wchar_t* Filename) override;
 };
 
-//File manager that uses user documents directory
-class FFileManagerDeusExeUserDocs: public FFileManagerDeusExe
+//File manager that keeps configuration data, save games etc. in a separate data directory
+class FFileManagerDeusExeDataDir: public FFileManagerDeusExe
 {
 public:
-    explicit FFileManagerDeusExeUserDocs();
+    explicit FFileManagerDeusExeDataDir(const wchar_t* const pszDataDir);
 private:
-    void Test();
-
+    wchar_t m_szDataDir[MAX_PATH];
     wchar_t m_szUserDataPath[MAX_PATH];
     wchar_t m_szSystemPath[MAX_PATH];
     wchar_t m_szGamePath[MAX_PATH];
+    bool m_bHaveGamePath = false; //!< False if the install's own location couldn't be determined, so absolute paths can't be classified
 
     //From FFileManagerDeusExe
 public:

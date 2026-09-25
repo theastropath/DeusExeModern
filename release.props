@@ -9,7 +9,8 @@
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <SDLCheck>true</SDLCheck>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
       <FloatingPointModel>Fast</FloatingPointModel>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
@@ -23,6 +24,9 @@
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <!-- Suppresses the inert LTCG "GCTL" POGO section-layout blob in the debug directory.
+           The CodeView entry is kept, so DbgHelp crash-stack symbolisation still resolves DeusEx.pdb. -->
+      <AdditionalOptions>/EMITPOGOPHASEINFO %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
 </Project>

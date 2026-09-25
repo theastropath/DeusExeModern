@@ -10,7 +10,7 @@ public:
         new CFreeSpaceFix;
     }
 
-    void ReplacementFunc(UObject& UObjectThis, CFreeSpaceFix& FixObjectThis, FFrame& Stack, RESULT_DECL);
+    static void ReplacementFunc(UObject& UObjectThis, CFreeSpaceFix& FixObjectThis, FFrame& Stack, RESULT_DECL);
 
 private:
     explicit CFreeSpaceFix();

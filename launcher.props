@@ -10,11 +10,12 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>../games/$(GAMENAME)/engine/inc;../games/$(GAMENAME)/core/inc;../games/$(GAMENAME)/window/inc;../games/$(GAMENAME)/deusex/inc;../games/$(GAMENAME)/extension/inc;../detours;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>PROJECTNAME=L"$(ProjectName)";_USE_MATH_DEFINES;NOMINMAX;_REALLY_WANT_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PROJECTNAME=L"$(ProjectName)";_USE_MATH_DEFINES;NOMINMAX;WINDOWS_IGNORE_PACKING_MISMATCH;_REALLY_WANT_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StructMemberAlignment>4Bytes</StructMemberAlignment>
       <TreatWChar_tAsBuiltInType>false</TreatWChar_tAsBuiltInType>
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <DisableSpecificWarnings>4121;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
     </ClCompile>
@@ -28,7 +29,7 @@
       <LargeAddressAware>true</LargeAddressAware>
     </Link>
     <PostBuildEvent>
-      <Command>copy "$(TargetPath) " "$(GAMEDIR)\system\"</Command>
+      <Command>if exist "$(GAMEDIR)\system\" copy /Y "$(TargetPath)" "$(GAMEDIR)\system\"</Command>
     </PostBuildEvent>
     <PreBuildEvent>
       <Command>

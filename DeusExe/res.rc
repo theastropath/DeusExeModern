@@ -7,16 +7,16 @@
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
-#include "afxres.h"
+#include "winres.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
 
 /////////////////////////////////////////////////////////////////////////////
-// Dutch (Netherlands) resources
+// English (United States) resources
 
-#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_NLD)
-LANGUAGE LANG_DUTCH, SUBLANG_DUTCH
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 #pragma code_page(1252)
 
 #ifdef APSTUDIO_INVOKED
@@ -32,7 +32,7 @@ END
 
 2 TEXTINCLUDE 
 BEGIN
-    "#include ""afxres.h""\r\n"
+    "#include ""winres.h""\r\n"
     "\0"
 END
 
@@ -67,14 +67,15 @@ CAPTION "Deus Exe Launcher"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     PUSHBUTTON      "Play",IDC_PLAY,72,48,190,44
-    PUSHBUTTON      "Configure",IDC_CONFIG,71,96,190,44
+    PUSHBUTTON      "Configure",IDC_CONFIG,72,96,190,44
     PUSHBUTTON      "Data Directories",IDC_DATADIRS,72,144,190,44
     PUSHBUTTON      "Exit",IDC_EXIT,72,192,190,44
-    CONTROL         "<a href=""http://www.kentie.net/article/dxguide"">kentie.net</a>",IDC_WEBSITE,
+    CONTROL         "<a href=""https://www.kentie.net/article/dxguide"">kentie.net</a>",IDC_WEBSITE,
                     "SysLink",LWS_USEVISUALSTYLE | WS_TABSTOP,6,294,60,12
-    CONTROL         "1",IDC_INIFILES1,"SysLink",LWS_USEVISUALSTYLE | LWS_RIGHT | WS_TABSTOP,264,270,60,12,WS_EX_TRANSPARENT | WS_EX_RIGHT
-    CONTROL         "2",IDC_INIFILES2,"SysLink",LWS_USEVISUALSTYLE | LWS_RIGHT | WS_TABSTOP,264,282,60,9,WS_EX_TRANSPARENT | WS_EX_RIGHT
-    CONTROL         IDC_BITMAP1,IDC_STATIC,"Static",SS_BITMAP | SS_CENTERIMAGE,0,0,331,40
+    CONTROL         "<a>Open save folder</a>",IDC_SAVEFOLDER,"SysLink",LWS_USEVISUALSTYLE | LWS_RIGHT | WS_TABSTOP,216,258,110,12,WS_EX_TRANSPARENT | WS_EX_RIGHT
+    CONTROL         "1",IDC_INIFILES1,"SysLink",LWS_USEVISUALSTYLE | LWS_RIGHT | WS_TABSTOP,266,270,60,12,WS_EX_TRANSPARENT | WS_EX_RIGHT
+    CONTROL         "2",IDC_INIFILES2,"SysLink",LWS_USEVISUALSTYLE | LWS_RIGHT | WS_TABSTOP,266,282,60,9,WS_EX_TRANSPARENT | WS_EX_RIGHT
+    CONTROL         IDB_SPLASH,IDC_STATIC,"Static",SS_BITMAP | SS_CENTERIMAGE,0,0,331,40
     RTEXT           "Version",IDC_VERSION,246,294,80,8,0,WS_EX_TRANSPARENT | WS_EX_RIGHT
 END
 
@@ -88,25 +89,26 @@ BEGIN
     CONTROL         "Widescreen cinematic subtitle fix",CHK_SUBTITLEFIX,
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,12,30,120,10
     CONTROL         "Use custom GUI scaling:",CHK_GUIFIX,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,12,42,93,10
-    COMBOBOX        COMBO_GUISCALING,108,42,48,30,CBS_DROPDOWN | CBS_SORT | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        COMBO_GUISCALING,108,42,48,30,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     EDITTEXT        TXT_LATENCY,366,18,36,12,ES_AUTOHSCROLL | ES_NUMBER
     CONTROL         "Use DirectSound",CHK_DIRECTSOUND,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,222,30,112,11
-    CONTROL         "Use single CPU",CHK_USESINGLECPU,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,222,66,63,10
-    COMBOBOX        COMBO_RENDERER,84,115,127,72,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Use CPU core 0 only",CHK_USESINGLECPU,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,222,66,120,10
+    CONTROL         "Enable verbose logging",CHK_VERBOSELOGGING,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,222,78,120,11
+    COMBOBOX        COMBO_RENDERER,84,115,127,72,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     EDITTEXT        TXT_FPSLIMIT,84,132,36,12,ES_AUTOHSCROLL | ES_NUMBER
     CONTROL         "16 bit color",RADIO_16BIT,"Button",BS_AUTORADIOBUTTON | WS_GROUP,228,120,55,11
     CONTROL         "32 bit color",RADIO_32BIT,"Button",BS_AUTORADIOBUTTON,228,132,98,11
     CONTROL         "Detail textures",CHK_DETAILTEX,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,306,120,112,11
     CONTROL         "Windowed",RADIO_VPWINDOWED,"Button",BS_AUTORADIOBUTTON | WS_GROUP,18,168,47,11
-    CONTROL         "Fullscreen",RADIO_VPFULLSCREEN,"Button",BS_AUTORADIOBUTTON,18,180,47,11
-    CONTROL         "Borderless fullscreen window",RADIO_VPBORDERLESS,"Button",BS_AUTORADIOBUTTON,18,192,114,11
+    CONTROL         "Borderless fullscreen window",RADIO_VPBORDERLESS,"Button",BS_AUTORADIOBUTTON,18,180,114,11
+    CONTROL         "Exclusive fullscreen (may have Alt+Tab issues)",RADIO_VPFULLSCREEN,"Button",BS_AUTORADIOBUTTON,18,192,195,11
     CONTROL         "Default ",RADIO_FOVDEFAULT,"Button",BS_AUTORADIOBUTTON | WS_GROUP,228,168,84,11
     CONTROL         "Automatic (updates FOV on window resize)",RADIO_FOVAUTO,
                     "Button",BS_AUTORADIOBUTTON,228,180,180,11
     CONTROL         "Custom:",RADIO_FOVCUSTOM,"Button",BS_AUTORADIOBUTTON,228,192,42,11
     EDITTEXT        TXT_FOV,276,192,54,12,ES_AUTOHSCROLL | ES_NUMBER
     CONTROL         "Common:",RADIO_RESCOMMON,"Button",BS_AUTORADIOBUTTON | WS_GROUP,18,228,47,11
-    COMBOBOX        COMBO_RESOLUTION,66,229,120,95,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        COMBO_RESOLUTION,66,229,120,95,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     CONTROL         "Custom:",RADIO_RESCUSTOM,"Button",BS_AUTORADIOBUTTON,18,246,41,11
     EDITTEXT        TXT_RESX,66,246,36,12,ES_AUTOHSCROLL | ES_NUMBER
     EDITTEXT        TXT_RESY,118,246,36,12,ES_AUTOHSCROLL | ES_NUMBER
@@ -124,7 +126,7 @@ BEGIN
     GROUPBOX        "UI",IDC_STATIC,6,6,204,90
     GROUPBOX        "Misc.",IDC_STATIC,216,54,216,42
     GROUPBOX        "Viewport",IDC_STATIC,12,156,204,54
-    CONTROL         "Span all monitors",CHK_BORDERLESSALLMONITORS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,132,192,78,11
+    CONTROL         "Span all monitors",CHK_BORDERLESSALLMONITORS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,132,180,78,11
 END
 
 IDD_DATADIRS DIALOGEX 0, 0, 340, 297
@@ -146,9 +148,13 @@ END
 // Version
 //
 
+//Bump both together: Misc::GetVersion() reads ProductVersion, the shell's file properties show FileVersion
+#define VER_NUMBER      9,0,1,0
+#define VER_NUMBER_STR  "9.0.1.0"
+
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 8,1,0,0
- PRODUCTVERSION 8,1,0,0
+ FILEVERSION VER_NUMBER
+ PRODUCTVERSION VER_NUMBER
  FILEFLAGSMASK 0x17L
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -161,21 +167,21 @@ VS_VERSION_INFO VERSIONINFO
 BEGIN
     BLOCK "StringFileInfo"
     BEGIN
-        BLOCK "041304b0"
+        BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "Marijn Kentie"
             VALUE "FileDescription", "Deus Ex"
-            VALUE "FileVersion", "8.1.0.0"
+            VALUE "FileVersion", VER_NUMBER_STR
             VALUE "InternalName", "DeusExe"
-            VALUE "LegalCopyright", "Copyright (C) 2016 Marijn Kentie"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Marijn Kentie"
             VALUE "OriginalFilename", "DeusEx.exe"
             VALUE "ProductName", "Deus Exe"
-            VALUE "ProductVersion", "8.1.0.0"
+            VALUE "ProductVersion", VER_NUMBER_STR
         END
     END
     BLOCK "VarFileInfo"
     BEGIN
-        VALUE "Translation", 0x413, 1200
+        VALUE "Translation", 0x409, 1200
     END
 END
 
@@ -219,9 +225,9 @@ END
 // Bitmap
 //
 
-IDC_BITMAP1             BITMAP                  "deusex.bmp"
+IDB_SPLASH              BITMAP                  "deusex.bmp"
 
-#endif    // Dutch (Netherlands) resources
+#endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
 
 

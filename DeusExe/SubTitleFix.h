@@ -16,7 +16,7 @@ public:
         }
     }
 
-    void ReplacementFunc(XWindow& XWinThis, CSubtitleFix& /*Context*/, FFrame& Stack, RESULT_DECL);
+    static void ReplacementFunc(XWindow& XWinThis, CSubtitleFix& /*Context*/, FFrame& Stack, RESULT_DECL);
 
 private:
     explicit CSubtitleFix();

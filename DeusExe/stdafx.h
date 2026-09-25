@@ -11,6 +11,7 @@
 #include <CommCtrl.h>
 #include <ShlObj.h>
 #include <Uxtheme.h>
+#include <vsstyle.h> //BP_CHECKBOX / CBS_* constants for custom-drawn checkbox images
 //#include <hidusage.h> //Not included in Platform SDK
 
 //C/C++
@@ -23,6 +24,8 @@
 #include <array>
 #include <memory>
 #include <cassert>
+#include <cstring>
+#include <fstream>
 #include <unordered_map>
 
 //Unreal

@@ -1,30 +1,22 @@
 #include "stdafx.h"
 #include "FileManagerDeusExe.h"
 #include "Misc.h"
+#include "CrashReport.h"
 
 const wchar_t* const FFileManagerDeusExe::sm_pszIntPaths = L"IntPaths";
 
-
-FFileManagerDeusExe::FFileManagerDeusExe()
-{
-
-}
-
-FFileManagerDeusExe::~FFileManagerDeusExe()
-{
-
-}
-
-void FFileManagerDeusExe::AfterCoreInit()
-{
-
-}
-
-
 void FFileManagerDeusExe::OnGameStart()
 {
+    //Rebuild from the (possibly just edited in the data directories dialog) config
+    BuildIntPaths();
+    BuildConPaths();
+}
+
+void FFileManagerDeusExe::BuildIntPaths()
+{
+    assert(GConfig);
+    //Create the container up front so a reentrant IntOverride() call can't try to build it again
     m_pIntPaths = std::make_unique<std::vector<std::wstring>>();
-    //Prepare int overrides
     TMultiMap<FString, FString>* const pSectionInt = GConfig->GetSectionPrivate(PROJECTNAME, FALSE, FALSE);
     if(pSectionInt)
     {
@@ -34,7 +26,7 @@ void FFileManagerDeusExe::OnGameStart()
         {
             //Convert format like "..\Shifter\*.int" to "..\Shifter\"
             wchar_t szBuf[MAX_PATH];
-            wcscpy_s(szBuf, *IntPaths(i));
+            wcsncpy_s(szBuf, *IntPaths(i), _TRUNCATE); //Truncate rather than abort on an over-long ini entry
             PathRemoveFileSpec(szBuf);
             PathAddBackslash(szBuf);
             m_pIntPaths->emplace_back(szBuf);
@@ -44,10 +36,6 @@ void FFileManagerDeusExe::OnGameStart()
 
 bool FFileManagerDeusExe::IntOverride(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName)
 {
-    if(!m_pIntPaths) //Not initialized yet
-    {
-        return false;
-    }
     wchar_t* pszExtension = PathFindExtension(pszOldName);
     assert(pszExtension);
     if(*pszExtension == '\0')
@@ -64,13 +52,31 @@ bool FFileManagerDeusExe::IntOverride(wchar_t(&szNewName)[MAX_PATH], const wchar
         return false;
     }
 
+    //Build the override paths on first use. The game reads some .int files (notably the DeusEx package's own
+    //DeusEx.int) before OnGameStart() runs; as the config cache keeps whatever content is read first, without
+    //this those early reads would miss the override and a mod's DeusEx.int would never be used.
+    if(!m_pIntPaths)
+    {
+        if(!GConfig) //Core (and thus the config holding the override paths) isn't up yet
+        {
+            return false;
+        }
+        BuildIntPaths();
+    }
+
+    const auto IsExistingFile = [](const wchar_t* const pszPath)
+    {
+        const DWORD dwAttrib = GetFileAttributes(pszPath); //PathFileExists also returns true for directories
+        return dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY);
+    };
+
     for(const std::wstring& IntPath : *m_pIntPaths)
     {
         //PathCombine() doens't work with relative paths...
-        wcscpy_s(szNewName, IntPath.c_str());
-        wcscpy_s(szNewName + IntPath.length(), _countof(szNewName) - IntPath.length(), pszOldName);
-        const DWORD dwAttrib = GetFileAttributes(szNewName); //PathFileExists also returns true for directories
-        if(dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
+        wcsncpy_s(szNewName, IntPath.c_str(), _TRUNCATE);
+        const size_t iPrefixLen = wcslen(szNewName); //Not IntPath's length: the copy above may have truncated
+        wcsncpy_s(szNewName + iPrefixLen, _countof(szNewName) - iPrefixLen, pszOldName, _TRUNCATE);
+        if(IsExistingFile(szNewName))
         {
             return true;
         }
@@ -78,9 +84,13 @@ bool FFileManagerDeusExe::IntOverride(wchar_t(&szNewName)[MAX_PATH], const wchar
         if(bLocalizedFile) //If localized, try again with .int
         {
             wchar_t* const pszNewExtension = PathFindExtension(szNewName);
-            wcscpy_s(pszNewExtension, _countof(szNewName) - (pszNewExtension - szNewName), L".int");
-            const DWORD dwAttrib2 = GetFileAttributes(szNewName); //PathFileExists also returns true for directories
-            if(dwAttrib2 != INVALID_FILE_ATTRIBUTES && !(dwAttrib2 & FILE_ATTRIBUTE_DIRECTORY))
+            const size_t iExtCharsLeft = _countof(szNewName) - static_cast<size_t>(pszNewExtension - szNewName);
+            if(iExtCharsLeft < _countof(L".int")) //The copy above may have truncated the extension away; wcscpy_s aborts the process rather than overrun
+            {
+                continue;
+            }
+            wcscpy_s(pszNewExtension, iExtCharsLeft, L".int");
+            if(IsExistingFile(szNewName))
             {
                 return true;
             }
@@ -90,58 +100,180 @@ bool FFileManagerDeusExe::IntOverride(wchar_t(&szNewName)[MAX_PATH], const wchar
     return false;
 }
 
+void FFileManagerDeusExe::BuildConPaths()
+{
+    //Deus Ex loads DeusExCon*.u conversation packages by bare name and never releases them, so the first copy read
+    //stays resident for the session and the origin/System copy can win. Map each such package a data directory
+    //provides to its highest-priority (first-listed) copy; ConOverride() then redirects every open of it there.
+    m_pConPaths = std::make_unique<std::unordered_map<std::wstring, std::wstring>>();
+
+    if(!GSys)
+    {
+        return;
+    }
+
+    wchar_t szSystemDir[MAX_PATH];
+    if(!Misc::GetGameSystemDir(szSystemDir))
+    {
+        return;
+    }
+
+    std::vector<std::wstring> ScannedDirs; //A directory appears once per extension; only scan it once.
+
+    const INT iPathCount = GSys->Paths.Num();
+    for(INT i = 0; i < iPathCount; i++) //Top-to-bottom: the first (highest-priority) data directory copy wins
+    {
+        wchar_t szRelDir[MAX_PATH];
+        wcsncpy_s(szRelDir, *GSys->Paths(i), _TRUNCATE);
+        PathRemoveFileSpec(szRelDir);
+
+        wchar_t szDir[MAX_PATH];
+        if(!PathCombine(szDir, szSystemDir, szRelDir)) //Leaves the buffer empty, which would search the current directory instead
+        {
+            continue;
+        }
+
+        //A redirected data directory has its own copy of the folder, which outranks the install's for this same entry
+        wchar_t szRedirectedDir[MAX_PATH];
+        if(ToModernFileName(szRedirectedDir, szDir) && _wcsicmp(szRedirectedDir, szDir) != 0)
+        {
+            ScanConDir(szRedirectedDir, ScannedDirs);
+        }
+
+        //Skip the origin/System folder; data directories override it.
+        if(_wcsicmp(szDir, szSystemDir) != 0)
+        {
+            ScanConDir(szDir, ScannedDirs);
+        }
+    }
+}
+
+void FFileManagerDeusExe::ScanConDir(const wchar_t* const pszDir, std::vector<std::wstring>& ScannedDirs)
+{
+    wchar_t szDirKey[MAX_PATH];
+    wcsncpy_s(szDirKey, pszDir, _TRUNCATE);
+    _wcslwr_s(szDirKey, _countof(szDirKey));
+    if(std::find(ScannedDirs.cbegin(), ScannedDirs.cend(), szDirKey) != ScannedDirs.cend())
+    {
+        return;
+    }
+    ScannedDirs.emplace_back(szDirKey);
+
+    wchar_t szSearchSpec[MAX_PATH];
+    if(!PathCombine(szSearchSpec, pszDir, L"DeusExCon*.u"))
+    {
+        return;
+    }
+
+    WIN32_FIND_DATA FindData;
+    const HANDLE hFind = FindFirstFile(szSearchSpec, &FindData);
+    if(hFind == INVALID_HANDLE_VALUE)
+    {
+        return;
+    }
+    do
+    {
+        //FindFirstFile's "*.u" can also match names like "*.u3d" through 8.3 short names, so verify the extension.
+        if((FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || _wcsicmp(PathFindExtension(FindData.cFileName), L".u") != 0)
+        {
+            continue;
+        }
+
+        wchar_t szNameKey[MAX_PATH];
+        wcsncpy_s(szNameKey, FindData.cFileName, _TRUNCATE);
+        _wcslwr_s(szNameKey, _countof(szNameKey));
+
+        //Keep the first (highest-priority) data directory copy of each package.
+        if(m_pConPaths->find(szNameKey) == m_pConPaths->cend())
+        {
+            wchar_t szFullPath[MAX_PATH];
+            if(PathCombine(szFullPath, pszDir, FindData.cFileName))
+            {
+                m_pConPaths->emplace(szNameKey, szFullPath);
+            }
+        }
+    } while(FindNextFile(hFind, &FindData) != FALSE);
+    FindClose(hFind);
+}
+
+bool FFileManagerDeusExe::ConOverride(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName)
+{
+    if(!m_pConPaths || m_pConPaths->empty())
+    {
+        return false;
+    }
+
+    //Only conversation packages (.u) are ever in the map; skip the lookup for anything else.
+    const wchar_t* const pszFileName = PathFindFileName(pszOldName);
+    if(_wcsicmp(PathFindExtension(pszFileName), L".u") != 0)
+    {
+        return false;
+    }
+
+    wchar_t szNameKey[MAX_PATH];
+    wcsncpy_s(szNameKey, pszFileName, _TRUNCATE);
+    _wcslwr_s(szNameKey, _countof(szNameKey));
+
+    const auto it = m_pConPaths->find(szNameKey);
+    if(it == m_pConPaths->cend())
+    {
+        return false;
+    }
+
+    wcsncpy_s(szNewName, it->second.c_str(), _TRUNCATE);
+    return true;
+}
+
 FArchive* FFileManagerDeusExe::CreateFileReader(const wchar_t* Filename, DWORD Flags, FOutputDevice* Error)
 {
     wchar_t szFilename[MAX_PATH];
-    return FFileManagerWindows::CreateFileReader(IntOverride(szFilename, Filename) ? szFilename : Filename, Flags, Error);
+    const wchar_t* const pszResolved = ConOverride(szFilename, Filename) || IntOverride(szFilename, Filename) ? szFilename : Filename;
+    FArchive* const pReader = FFileManagerWindows::CreateFileReader(pszResolved, Flags, Error);
+    if(pReader != nullptr) //Only successful opens: package resolution probes every search path and mostly misses
+    {
+        CrashReport::RecordFileOpen(pszResolved);
+    }
+    return pReader;
+}
+
+INT FFileManagerDeusExe::FileSize(const wchar_t* Filename)
+{
+    //Apply the same .int/.u overrides as CreateFileReader(), so the config cache's existence check
+    //(FConfigCacheIni::Find uses FileSize()>=0) and the engine's package search resolve to the same file.
+    wchar_t szFilename[MAX_PATH];
+    return FFileManagerWindows::FileSize(ConOverride(szFilename, Filename) || IntOverride(szFilename, Filename) ? szFilename : Filename);
 }
 
 bool FFileManagerDeusExe::ToModernFileName(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName, const char /*op*/ /*= 'r'*/)
 {
-	wcscpy_s(szNewName, pszOldName);
+    wcsncpy_s(szNewName, pszOldName, _TRUNCATE);
     return true;
 }
 
-FFileManagerDeusExeUserDocs::FFileManagerDeusExeUserDocs()
+FFileManagerDeusExeDataDir::FFileManagerDeusExeDataDir(const wchar_t* const pszDataDir)
 {
-    Misc::GetUserDocsDir(m_szUserDataPath);
+    wcsncpy_s(m_szDataDir, pszDataDir, _TRUNCATE);
+
+    wcsncpy_s(m_szUserDataPath, m_szDataDir, _TRUNCATE);
     PathAppend(m_szUserDataPath, L"System"); //The games use paths relative to system, so we're doing that too.
 
-    //Get game and system directory
-    Misc::GetGameSystemDir(m_szSystemPath);
-    PathCombine(m_szGamePath, m_szSystemPath, L".."); //Move up from system directory
-
-#ifdef _DEBUG
-    Test();
-#endif
+    m_szSystemPath[0] = '\0';
+    m_szGamePath[0] = '\0';
+    m_bHaveGamePath = Misc::GetGameSystemDir(m_szSystemPath) && PathCombine(m_szGamePath, m_szSystemPath, L"..") != nullptr; //Move up from system directory
 }
 
-void FFileManagerDeusExeUserDocs::AfterCoreInit()
+void FFileManagerDeusExeDataDir::AfterCoreInit()
 {
     assert(GLog);
-    GLog->Log(L"Deus Exe: Using User Documents File Manager.");
+    GLog->Logf(L"Deus Exe: Using data directory '%s'.", m_szDataDir);
+    if(!m_bHaveGamePath)
+    {
+        GLog->Log(L"Deus Exe: No game directory; absolute paths are not redirected.");
+    }
     FFileManagerDeusExe::AfterCoreInit();
 }
 
-void FFileManagerDeusExeUserDocs::Test()
-{
-    wchar_t szNewPath[MAX_PATH];
-    ToModernFileName(szNewPath,L"bla.txt",'w');
-    ToModernFileName(szNewPath,L".\\bla.txt",'w');
-    ToModernFileName(szNewPath,L"..\\bla.txt",'w');
-    ToModernFileName(szNewPath,L"..\\system\\bla.txt",'w');
-    ToModernFileName(szNewPath,L"..\\textures\\bla.txt",'w');
-    ToModernFileName(szNewPath,L"..\\..\\bla.txt",'w');
-    ToModernFileName(szNewPath,L"D:\\Steam\\steamapps\\common\\Deus Ex\\..\\bla.txt");
-    ToModernFileName(szNewPath,L"D:\\Steam\\steamapps\\common\\Deus Ex\\textures\\bla.txt");
-    ToModernFileName(szNewPath,L"D:\\Steam\\steamapps\\common\\Deus Ex\\system\\bla.txt");
-    ToModernFileName(szNewPath,L"c:\\bla.txt",'w');
-    ToModernFileName(szNewPath,L"C:\\Users\\Marijn Kentie\\Documents\\Deus Ex\\System\\bla.txt",'w');
-    ToModernFileName(szNewPath, L"C:\\Users\\Marijn Kentie\\Documents\\Deus Ex\\boe\\..\\System\\bla2.txt", 'w');
-    ToModernFileName(szNewPath,L"C:\\Users\\Marijn Kentie\\Documents\\Deus Ex\\",'w');
-}
-
-bool FFileManagerDeusExeUserDocs::ToModernFileName(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName, const char op)
+bool FFileManagerDeusExeDataDir::ToModernFileName(wchar_t(&szNewName)[MAX_PATH], const wchar_t* const pszOldName, const char op)
 {
     assert(pszOldName);
     assert(szNewName != pszOldName);
@@ -149,32 +281,51 @@ bool FFileManagerDeusExeUserDocs::ToModernFileName(wchar_t(&szNewName)[MAX_PATH]
     //Make all paths relative to game directory
     if(PathIsRelative(pszOldName))
     {
-        wcscpy_s(szNewName, pszOldName);
+        wcsncpy_s(szNewName, pszOldName, _TRUNCATE);
+    }
+    else if(!m_bHaveGamePath) //Without the install's location there's no way to tell which absolute paths belong to it
+    {
+        return false;
     }
     else
     {
-        //If not in game directory, abort. This facilitates how MakeDirectory() recursively creates directories
         wchar_t szCommonPrefix[MAX_PATH];
-        PathCanonicalize(szNewName,pszOldName); //Resolve relative parts of path
+        if(!PathCanonicalize(szNewName, pszOldName)) //Fails on an over-long path, leaving the buffer with no usable content
+        {
+            return false;
+        }
+
+        //Already converted. Needed because with a game name the data directory lies inside the game directory, so the check below wouldn't catch it
+        PathCommonPrefix(szNewName,m_szDataDir,szCommonPrefix);
+        if(_wcsicmp(szCommonPrefix,m_szDataDir)==0)
+        {
+            return false;
+        }
+
+        //If not in game directory, abort. This facilitates how MakeDirectory() recursively creates directories
         PathCommonPrefix(szNewName,m_szGamePath,szCommonPrefix);
-        if(_wcsicmp(szCommonPrefix,m_szGamePath)!=0) //If not in game directory, don't touch path and return
+        if(_wcsicmp(szCommonPrefix,m_szGamePath)!=0)
         {
             return false;
         }
 
         //Make path relative to System, like the games' own paths
-        PathRelativePathTo(szNewName,m_szSystemPath,FILE_ATTRIBUTE_DIRECTORY,pszOldName,0);
+        if(!PathRelativePathTo(szNewName,m_szSystemPath,FILE_ATTRIBUTE_DIRECTORY,pszOldName,0))
+        {
+            return false; //Nothing usable to rebase; leave the caller with the original path
+        }
     }
 
-    //Rebase to Documents
-    PathCombine(szNewName,m_szUserDataPath,szNewName);
+    if(!PathCombine(szNewName,m_szUserDataPath,szNewName)) //On failure it empties the buffer, which would then be used as the file name
+    {
+        return false;
+    }
     
     if((op == 'r' || op == 'd') && !PathFileExists(szNewName) && PathFileExists(pszOldName)) //If opening a file that already exists, return original.
     {
         return false;
     }
 
-    //Create directory if needed
     if(op=='w' && !PathIsDirectory(pszOldName)) //PathIsDirectory needed as PathRemoveFileSpec would strip stuff like 'Save040' to just 'Save'
     {
         wchar_t* pszFileSpec = PathFindFileName(szNewName);
@@ -188,28 +339,34 @@ bool FFileManagerDeusExeUserDocs::ToModernFileName(wchar_t(&szNewName)[MAX_PATH]
     return true;
 }
 
-FArchive* FFileManagerDeusExeUserDocs::CreateFileReader(const wchar_t* Filename, DWORD Flags, FOutputDevice* Error)
+FArchive* FFileManagerDeusExeDataDir::CreateFileReader(const wchar_t* Filename, DWORD Flags, FOutputDevice* Error)
 {
     assert(Filename);
     wchar_t szNewFilename[MAX_PATH];
-    return FFileManagerWindows::CreateFileReader(IntOverride(szNewFilename, Filename) ? szNewFilename : ToModernFileName(szNewFilename, Filename) ? szNewFilename : Filename, Flags, Error);
+    const wchar_t* const pszResolved = ConOverride(szNewFilename, Filename) || IntOverride(szNewFilename, Filename) ? szNewFilename : ToModernFileName(szNewFilename, Filename) ? szNewFilename : Filename;
+    FArchive* const pReader = FFileManagerWindows::CreateFileReader(pszResolved, Flags, Error);
+    if(pReader != nullptr)
+    {
+        CrashReport::RecordFileOpen(pszResolved);
+    }
+    return pReader;
 }
 
-FArchive* FFileManagerDeusExeUserDocs::CreateFileWriter(const wchar_t* Filename, DWORD Flags, FOutputDevice* Error)
+FArchive* FFileManagerDeusExeDataDir::CreateFileWriter(const wchar_t* Filename, DWORD Flags, FOutputDevice* Error)
 {
     assert(Filename);
     wchar_t szNewFilename[MAX_PATH];
     return FFileManagerWindows::CreateFileWriter(ToModernFileName(szNewFilename, Filename, 'w') ? szNewFilename : Filename, Flags, Error);
 }
 
-INT FFileManagerDeusExeUserDocs::FileSize(const wchar_t* Filename)
+INT FFileManagerDeusExeDataDir::FileSize(const wchar_t* Filename)
 {
     assert(Filename);
     wchar_t szNewFilename[MAX_PATH];
-    return FFileManagerWindows::FileSize(ToModernFileName(szNewFilename, Filename) ? szNewFilename : Filename);
+    return FFileManagerWindows::FileSize(ConOverride(szNewFilename, Filename) || IntOverride(szNewFilename, Filename) ? szNewFilename : ToModernFileName(szNewFilename, Filename) ? szNewFilename : Filename);
 }
 
-UBOOL FFileManagerDeusExeUserDocs::Copy(const wchar_t* DestFile, const wchar_t* SrcFile, UBOOL ReplaceExisting, UBOOL EvenIfReadOnly, UBOOL Attributes, void(*Progress)(FLOAT Fraction))
+UBOOL FFileManagerDeusExeDataDir::Copy(const wchar_t* DestFile, const wchar_t* SrcFile, UBOOL ReplaceExisting, UBOOL EvenIfReadOnly, UBOOL Attributes, void(*Progress)(FLOAT Fraction))
 {
     assert(DestFile);
     assert(SrcFile);
@@ -218,14 +375,14 @@ UBOOL FFileManagerDeusExeUserDocs::Copy(const wchar_t* DestFile, const wchar_t* 
     return FFileManagerWindows::Copy(ToModernFileName(szNewDestFile, DestFile, 'w') ? szNewDestFile : DestFile, ToModernFileName(szNewSrcFile, SrcFile)  ? szNewSrcFile : SrcFile, ReplaceExisting, EvenIfReadOnly, Attributes, Progress);
 }
 
-UBOOL FFileManagerDeusExeUserDocs::Delete(const wchar_t* Filename, UBOOL RequireExists, UBOOL EvenReadOnly)
+UBOOL FFileManagerDeusExeDataDir::Delete(const wchar_t* Filename, UBOOL RequireExists, UBOOL EvenReadOnly)
 {
     assert(Filename);
     wchar_t szNewFilename[MAX_PATH];
     return FFileManagerWindows::Delete(ToModernFileName(szNewFilename, Filename, 'd') ? szNewFilename : Filename, RequireExists, EvenReadOnly);
 }
 
-UBOOL FFileManagerDeusExeUserDocs::Move(const wchar_t* Dest, const wchar_t* Src, UBOOL Replace, UBOOL EvenIfReadOnly, UBOOL Attributes)
+UBOOL FFileManagerDeusExeDataDir::Move(const wchar_t* Dest, const wchar_t* Src, UBOOL Replace, UBOOL EvenIfReadOnly, UBOOL Attributes)
 {
     assert(Dest);
     assert(Src);
@@ -234,21 +391,21 @@ UBOOL FFileManagerDeusExeUserDocs::Move(const wchar_t* Dest, const wchar_t* Src,
     return FFileManagerWindows::Move(ToModernFileName(szNewDest, Dest, 'w') ? szNewDest : Dest, ToModernFileName(szNewSrc, Src, 'd') ? szNewSrc : Src, Replace, EvenIfReadOnly, Attributes);
 }
     
-UBOOL FFileManagerDeusExeUserDocs::MakeDirectory(const wchar_t* Path, UBOOL Tree)
+UBOOL FFileManagerDeusExeDataDir::MakeDirectory(const wchar_t* Path, UBOOL Tree)
 {
     assert(Path);
     wchar_t szNewPath[MAX_PATH];
     return FFileManagerWindows::MakeDirectory(ToModernFileName(szNewPath, Path, 'w')  ? szNewPath : Path, Tree);
 }
 
-UBOOL FFileManagerDeusExeUserDocs::DeleteDirectory(const wchar_t* Path, UBOOL RequireExists, UBOOL Tree)
+UBOOL FFileManagerDeusExeDataDir::DeleteDirectory(const wchar_t* Path, UBOOL RequireExists, UBOOL Tree)
 {
     assert(Path);
     wchar_t szNewPath[MAX_PATH];
     return FFileManagerWindows::DeleteDirectory(ToModernFileName(szNewPath, Path, 'd') ? szNewPath : Path, RequireExists, Tree);
 }
 
-TArray<FString> FFileManagerDeusExeUserDocs::FindFiles(const wchar_t* Filename, UBOOL Files, UBOOL Directories)
+TArray<FString> FFileManagerDeusExeDataDir::FindFiles(const wchar_t* Filename, UBOOL Files, UBOOL Directories)
 {
     assert(Filename);
     
@@ -274,15 +431,15 @@ TArray<FString> FFileManagerDeusExeUserDocs::FindFiles(const wchar_t* Filename, 
                 && ((Data.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY) ? Directories : Files)
                 && Result.FindItemIndex(Data.cFileName) == INDEX_NONE) //Don't list things twice if the game won't be able to tell them apart (i.e. a directory like 'Save001' with no further path will result in the new version being listed twice)
             {
+                #pragma warning(push)
                 #pragma warning(disable:4291) //no matching operator delete found; memory will not be freed if initialization throws an exception
                 new(Result)FString(Data.cFileName);
+                #pragma warning(pop)
             }
         } while(FindNextFileW(hHandle, &Data));
+
+        FindClose(hHandle);
     }
 
-    if( hHandle )
-    {
-        FindClose( hHandle );
-    }
     return Result;
 }

@@ -5,19 +5,9 @@
 #include "SubTitleFix.h"
 #include "resource.h"
 
-CFixApp::CFixApp()
+bool CFixApp::Show(const HWND hWndParent)
 {
-
-}
-
-CFixApp::~CFixApp()
-{
-
-}
-
-bool CFixApp::Show(const HWND hWndParent) const
-{
-    return DialogBoxParam(GetModuleHandle(0),MAKEINTRESOURCE(IDD_DIALOG2),hWndParent,FixAppDialogProc,reinterpret_cast<LPARAM>(this)) == 1;
+    return DialogBoxParam(GetModuleHandle(0),MAKEINTRESOURCE(IDD_FIXAPP),hWndParent,FixAppDialogProc,reinterpret_cast<LPARAM>(this)) == 1;
 }
 
 void CFixApp::ReadSettings()
@@ -34,7 +24,10 @@ void CFixApp::ReadSettings()
         GConfig->GetBool(L"WinDrv.WindowsClient", L"StartupFullscreen", bFullscreen);
     }
 
-    CheckRadioButton(m_hWnd, RADIO_VPWINDOWED, RADIO_VPBORDERLESS, bBorderless ? RADIO_VPBORDERLESS : bFullscreen ? RADIO_VPFULLSCREEN : RADIO_VPWINDOWED);
+    //Set each radio explicitly: CheckRadioButton unchecks every control in the ID range, which here spans unrelated ones too
+    CheckDlgButton(m_hWnd, RADIO_VPBORDERLESS, bBorderless ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hWnd, RADIO_VPFULLSCREEN, !bBorderless && bFullscreen ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(m_hWnd, RADIO_VPWINDOWED, !bBorderless && !bFullscreen ? BST_CHECKED : BST_UNCHECKED);
     EnableWindow(GetDlgItem(m_hWnd, CHK_BORDERLESSALLMONITORS), bBorderless);
 
     UBOOL bBorderlessAllMonitors = FALSE;
@@ -56,12 +49,8 @@ void CFixApp::ReadSettings()
     if(bStandardRes) //Can fail if res not supported
     {
         ComboBox_SetCurSel(m_hWndCBResolutions, iComboRes);
-        CheckRadioButton(m_hWnd, RADIO_RESCOMMON, RADIO_RESCUSTOM, RADIO_RESCOMMON);
     }
-    else
-    {
-        CheckRadioButton(m_hWnd,RADIO_RESCOMMON,RADIO_RESCUSTOM,RADIO_RESCUSTOM);
-    }
+    CheckRadioButton(m_hWnd, RADIO_RESCOMMON, RADIO_RESCUSTOM, bStandardRes ? RADIO_RESCOMMON : RADIO_RESCUSTOM);
 
     SetDlgItemInt(m_hWnd, TXT_RESX, iResX, FALSE);
     SetDlgItemInt(m_hWnd, TXT_RESY, iResY, FALSE);
@@ -72,15 +61,7 @@ void CFixApp::ReadSettings()
     //Bit depth
     int iBitDepth = sm_iBPP_32;
     GConfig->GetInt(L"WinDrv.WindowsClient", L"FullscreenColorBits", iBitDepth);
-
-    if(iBitDepth == sm_iBPP_16)
-    {
-        CheckRadioButton(m_hWnd,RADIO_16BIT,RADIO_32BIT,RADIO_16BIT);
-    }
-    else
-    {
-        CheckRadioButton(m_hWnd,RADIO_16BIT,RADIO_32BIT,RADIO_32BIT);
-    }
+    CheckRadioButton(m_hWnd, RADIO_16BIT, RADIO_32BIT, iBitDepth == sm_iBPP_16 ? RADIO_16BIT : RADIO_32BIT);
 
     //FOV
     const float fDefaultFOV = Misc::GetDefaultFOV();
@@ -89,39 +70,27 @@ void CFixApp::ReadSettings()
     UBOOL bUseAutoFOV = TRUE;
     GConfig->GetBool(PROJECTNAME, L"UseAutoFOV", bUseAutoFOV);
 
-    if(bUseAutoFOV)
-    {
-        CheckRadioButton(m_hWnd, RADIO_FOVDEFAULT, RADIO_FOVCUSTOM, RADIO_FOVAUTO);
-        EnableWindow(m_hWndTxtFOV, FALSE);
-    }
-    else if (fFOV == fDefaultFOV)
-    {
-        CheckRadioButton(m_hWnd, RADIO_FOVDEFAULT, RADIO_FOVCUSTOM, RADIO_FOVDEFAULT);
-        EnableWindow(m_hWndTxtFOV, FALSE);
-    }
-    else
-    {
-        CheckRadioButton(m_hWnd, RADIO_FOVDEFAULT, RADIO_FOVCUSTOM, RADIO_FOVCUSTOM);
-        EnableWindow(m_hWndTxtFOV, TRUE);
-    }
+    const int iFOVRadio = bUseAutoFOV ? RADIO_FOVAUTO : fFOV == fDefaultFOV ? RADIO_FOVDEFAULT : RADIO_FOVCUSTOM;
+    CheckRadioButton(m_hWnd, RADIO_FOVDEFAULT, RADIO_FOVCUSTOM, iFOVRadio);
+    EnableWindow(m_hWndTxtFOV, iFOVRadio == RADIO_FOVCUSTOM);
     SetDlgItemInt(m_hWnd, TXT_FOV, static_cast<UINT>(fFOV), FALSE);
 
     //GUI scaling fix
     int iGuiScale = 0;
     GConfig->GetInt(PROJECTNAME, CGUIScalingFix::sm_pszConfigString, iGuiScale);
-    CheckDlgButton(m_hWnd, CHK_GUIFIX, iGuiScale!=0);
+    if (iGuiScale > CGUIScalingFix::sm_iMaxScale) //The fix clamps a hand-edited value the same way
+    {
+        iGuiScale = CGUIScalingFix::sm_iMaxScale;
+    }
+    CheckDlgButton(m_hWnd, CHK_GUIFIX, iGuiScale > 0);
+    EnableWindow(m_hWndCBGUIScales, iGuiScale > 0);
     if (iGuiScale > 0)
     {
         ComboBox_SetCurSel(m_hWndCBGUIScales, iGuiScale - 1);
-        EnableWindow(m_hWndCBGUIScales, TRUE);
-    }
-    else
-    {
-        EnableWindow(m_hWndCBGUIScales, FALSE);
     }
 
     //Subtitle fix
-    BOOL bSubtitleFix = TRUE;
+    BOOL bSubtitleFix = FALSE; //Same default as CSubtitleFix::Factory, else the box claims the fix is on while it isn't
     GConfig->GetBool(PROJECTNAME, L"SubtitleFix", bSubtitleFix);
     CheckDlgButton(m_hWnd, CHK_SUBTITLEFIX, bSubtitleFix);
 
@@ -132,10 +101,12 @@ void CFixApp::ReadSettings()
         pszRenderer = L"SoftDrv.SoftwareRenderDevice";
     }
 
-    const auto renderIt = std::find(m_Renderers.cbegin(), m_Renderers.cend(), pszRenderer);
+    //Case-insensitive: the engine treats ini values that way, so a hand-edited 'd3ddrv.d3drenderdevice' has to match too
+    const auto IsSameRenderer = [pszRenderer](const std::wstring& Other) { return _wcsicmp(Other.c_str(), pszRenderer) == 0; };
+    const auto renderIt = std::find_if(m_Renderers.cbegin(), m_Renderers.cend(), IsSameRenderer);
     if(renderIt != m_Renderers.cend())
     {
-        ComboBox_SetCurSel(m_hWndCBRenderers, renderIt - m_Renderers.begin());
+        ComboBox_SetCurSel(m_hWndCBRenderers, static_cast<int>(renderIt - m_Renderers.cbegin()));
     }
 
     //Detail textures
@@ -149,7 +120,7 @@ void CFixApp::ReadSettings()
     CheckDlgButton(m_hWnd,CHK_NOMOUSEACCEL, bNoMouseAccel);
 
     //DirectSound
-    BOOL bDirectSound = TRUE;
+    BOOL bDirectSound = FALSE;
     GConfig->GetBool(L"Galaxy.GalaxyAudioSubsystem", L"UseDirectSound", bDirectSound);
     CheckDlgButton(m_hWnd,CHK_DIRECTSOUND, bDirectSound);
 
@@ -167,15 +138,20 @@ void CFixApp::ReadSettings()
     BOOL bUseSingleCPU = FALSE;
     GConfig->GetBool(PROJECTNAME, L"UseSingleCPU", bUseSingleCPU);
     CheckDlgButton(m_hWnd, CHK_USESINGLECPU, bUseSingleCPU);
+
+    //Verbose logging
+    BOOL bVerboseLogging = FALSE;
+    GConfig->GetBool(PROJECTNAME, L"VerboseLogging", bVerboseLogging);
+    CheckDlgButton(m_hWnd, CHK_VERBOSELOGGING, bVerboseLogging);
 }
 
 void CFixApp::PopulateDialog()
 {
     //Populate the GUI scale combobox
-    for (size_t i = 1; i < 6; i++)
+    for (INT i = 1; i <= CGUIScalingFix::sm_iMaxScale; i++)
     {
-        wchar_t szBuf[3];
-        swprintf_s(szBuf, L"x%Iu", i);
+        wchar_t szBuf[8];
+        swprintf_s(szBuf, L"x%d", i);
         ComboBox_AddString(m_hWndCBGUIScales, szBuf);
     }
     ComboBox_SetCurSel(m_hWndCBGUIScales, 0);
@@ -183,19 +159,27 @@ void CFixApp::PopulateDialog()
     //Populate the resolution combobox
     DEVMODE dm = {};
     dm.dmSize = sizeof(dm);
-    Resolution r= {};
     for(DWORD iModeNum = 0; EnumDisplaySettings(NULL, iModeNum, &dm) != FALSE; iModeNum++)
     {
-        if((dm.dmPelsWidth != r.iX || dm.dmPelsHeight != r.iY) && dm.dmBitsPerPel == 32) //Only add each res once, but don't actually check if it matches the current color depth/refresh rate
+        if(dm.dmBitsPerPel != 32) //Don't actually check if it matches the current color depth/refresh rate
         {
-            r.iX = dm.dmPelsWidth;
-            r.iY = dm.dmPelsHeight;
-            m_Resolutions.push_back(r);
+            continue;
+        }
 
-            wchar_t szBuffer[20];
-            _snwprintf_s(szBuffer, _TRUNCATE, L"%Iux%Iu", r.iX, r.iY);
-            int iIndex = ComboBox_AddString(m_hWndCBResolutions, szBuffer);
-            ComboBox_SetItemData(m_hWndCBResolutions, iIndex, &(m_Resolutions.back()));
+        const Resolution r = { static_cast<size_t>(dm.dmPelsWidth), static_cast<size_t>(dm.dmPelsHeight) };
+        const auto IsSameRes = [&r](const Resolution& Other) { return Other.iX == r.iX && Other.iY == r.iY; };
+        if(std::find_if(m_Resolutions.cbegin(), m_Resolutions.cend(), IsSameRes) != m_Resolutions.cend()) //Each resolution is listed once per refresh rate
+        {
+            continue;
+        }
+        m_Resolutions.push_back(r);
+
+        wchar_t szBuffer[20];
+        _snwprintf_s(szBuffer, _TRUNCATE, L"%Iux%Iu", r.iX, r.iY);
+        const int iIndex = ComboBox_AddString(m_hWndCBResolutions, szBuffer);
+        if(iIndex >= 0)
+        {
+            ComboBox_SetItemData(m_hWndCBResolutions, iIndex, &m_Resolutions.back());
         }
     }
     ComboBox_SetCurSel(m_hWndCBResolutions, 0);
@@ -203,7 +187,6 @@ void CFixApp::PopulateDialog()
 
     //Renderers (based on UnEngineWin.h), requires appInit() to have been called
     TArray<FRegistryObjectInfo> Classes;
-    Classes.Empty();
 
     UObject::GetRegistryObjects( Classes, UClass::StaticClass(), URenderDevice::StaticClass(), 0 );
     for( TArray<FRegistryObjectInfo>::TIterator It(Classes); It; ++It )
@@ -215,8 +198,11 @@ void CFixApp::PopulateDialog()
             assert(pszDesc);
             if(ComboBox_FindStringExact(m_hWndCBRenderers, -1, pszDesc) == CB_ERR)
             {
-                ComboBox_AddString(m_hWndCBRenderers, pszDesc);
-                m_Renderers.emplace_back(static_cast<wchar_t*>(Path.GetCharArray().GetData()));
+                //Only track the class once the entry is really in the combo, else the index no longer maps onto m_Renderers
+                if(ComboBox_AddString(m_hWndCBRenderers, pszDesc) >= 0)
+                {
+                    m_Renderers.emplace_back(static_cast<wchar_t*>(Path.GetCharArray().GetData()));
+                }
             }
         }
     }
@@ -247,45 +233,53 @@ void CFixApp::ApplySettings() const
     GConfig->SetInt(L"WinDrv.WindowsClient",L"FullscreenColorBits",iBitDepth);
 
     //Resolution
-    size_t iResX, iResY;
+    const Resolution* pRes = nullptr;
     if(IsDlgButtonChecked(m_hWnd,RADIO_RESCOMMON))
     {
         const int i = ComboBox_GetCurSel(m_hWndCBResolutions);
-        const Resolution* pRes = reinterpret_cast<Resolution*>(ComboBox_GetItemData(m_hWndCBResolutions,i));
+        const LRESULT ItemData = i != CB_ERR ? ComboBox_GetItemData(m_hWndCBResolutions, i) : CB_ERR;
+        if(ItemData != CB_ERR)
+        {
+            pRes = reinterpret_cast<const Resolution*>(ItemData);
+        }
+    }
+
+    size_t iResX;
+    size_t iResY;
+    if(pRes)
+    {
         iResX = pRes->iX;
         iResY = pRes->iY;
     }
-    else
+    else //Custom resolution, or the list is empty/has nothing selected
     {
         iResX = GetDlgItemInt(m_hWnd, TXT_RESX, nullptr, FALSE);
         iResY = GetDlgItemInt(m_hWnd, TXT_RESY, nullptr, FALSE);
     }
+
+    //An empty field reads as 0, which would leave the game with no viewport at all. Any other value is the user's to pick.
+    if(iResX == 0)
+    {
+        iResX = sm_iFallbackResX;
+    }
+    if(iResY == 0)
+    {
+        iResY = sm_iFallbackResY;
+    }
+
     GConfig->SetInt(L"WinDrv.WindowsClient",L"FullscreenViewportX",iResX);
     GConfig->SetInt(L"WinDrv.WindowsClient", L"WindowedViewportX", iResX);
     GConfig->SetInt(L"WinDrv.WindowsClient",L"FullscreenViewportY",iResY);
     GConfig->SetInt(L"WinDrv.WindowsClient", L"WindowedViewportY", iResY);
 
     //FOV
-    float fFOV;
-    if(IsDlgButtonChecked(m_hWnd, RADIO_FOVAUTO))
+    const bool bAutoFOV = IsDlgButtonChecked(m_hWnd, RADIO_FOVAUTO) != 0;
+    GConfig->SetBool(PROJECTNAME, L"UseAutoFOV", bAutoFOV);
+    if(!bAutoFOV) //With auto FOV the launcher recomputes it from the viewport size instead
     {
-        fFOV = Misc::CalcFOV(iResX, iResY);
-        GConfig->SetBool(PROJECTNAME, L"UseAutoFOV", TRUE);
-    }
-    else
-    {
-        if(IsDlgButtonChecked(m_hWnd, RADIO_FOVDEFAULT))
-        {
-            fFOV = Misc::GetDefaultFOV();
-            GConfig->SetBool(PROJECTNAME, L"UseAutoFOV", FALSE);
-        }
-        else
-        {
-            fFOV = static_cast<float>(GetDlgItemInt(m_hWnd, TXT_FOV, nullptr, FALSE));
-            GConfig->SetBool(PROJECTNAME, L"UseAutoFOV", FALSE);
-        }
+        const float fFOV = IsDlgButtonChecked(m_hWnd, RADIO_FOVDEFAULT) ? Misc::GetDefaultFOV() : static_cast<float>(GetDlgItemInt(m_hWnd, TXT_FOV, nullptr, FALSE));
 
-        const wchar_t* pszUserIni = *static_cast<FConfigCacheIni*>(GConfig)->UserIni;
+        const wchar_t* const pszUserIni = *static_cast<FConfigCacheIni*>(GConfig)->UserIni;
         GConfig->SetFloat(L"Engine.PlayerPawn", L"DesiredFOV", fFOV, pszUserIni);
         GConfig->SetFloat(L"Engine.PlayerPawn", L"DefaultFOV", fFOV, pszUserIni);
     }
@@ -299,17 +293,151 @@ void CFixApp::ApplySettings() const
     //Full-screen
     GConfig->SetBool(PROJECTNAME, L"BorderlessFullscreenWindow", IsDlgButtonChecked(m_hWnd, RADIO_VPBORDERLESS) != 0);
     GConfig->SetBool(PROJECTNAME, L"BorderlessFullscreenWindowAllMonitors", IsDlgButtonChecked(m_hWnd, CHK_BORDERLESSALLMONITORS) != 0);
-    GConfig->SetBool(L"WinDrv.WindowsClient",L"StartupFullSCreen",IsDlgButtonChecked(m_hWnd,CHK_FULLSCREEN)!=0);
+    GConfig->SetBool(L"WinDrv.WindowsClient",L"StartupFullscreen",IsDlgButtonChecked(m_hWnd,RADIO_VPFULLSCREEN)!=0);
     //FPS Limit
     GConfig->SetInt(PROJECTNAME, L"FPSLimit", GetDlgItemInt(m_hWnd, TXT_FPSLIMIT, nullptr, FALSE));
     //Single CPU
     GConfig->SetBool(PROJECTNAME, L"UseSingleCPU", IsDlgButtonChecked(m_hWnd, CHK_USESINGLECPU) != 0);
-        
+    //Verbose logging. Applied straight away too: the dialog runs before the engine, but after the setting was read.
+    const bool bVerboseLogging = IsDlgButtonChecked(m_hWnd, CHK_VERBOSELOGGING) != 0;
+    GConfig->SetBool(PROJECTNAME, L"VerboseLogging", bVerboseLogging);
+    Misc::SetVerboseLogging(bVerboseLogging);
     //Renderer
     const int iRendererIndex = ComboBox_GetCurSel(m_hWndCBRenderers);
-    GConfig->SetString(L"Engine.Engine",L"GameRenderDevice",m_Renderers[iRendererIndex].c_str());
-    //Detail textures
-    GConfig->SetBool(m_Renderers[iRendererIndex].c_str(),L"DetailTextures",IsDlgButtonChecked(m_hWnd,CHK_DETAILTEX)!=0);
+    if(iRendererIndex != CB_ERR && static_cast<size_t>(iRendererIndex) < m_Renderers.size()) //No selection if the configured renderer isn't registered
+    {
+        const wchar_t* const pszRenderer = m_Renderers[iRendererIndex].c_str();
+        GConfig->SetString(L"Engine.Engine",L"GameRenderDevice",pszRenderer);
+        //Detail textures
+        GConfig->SetBool(pszRenderer,L"DetailTextures",IsDlgButtonChecked(m_hWnd,CHK_DETAILTEX)!=0);
+    }
+
+    //Keep an optional dxvk.conf in sync with the FPS limit
+    UpdateDXVKConfig();
+}
+
+void CFixApp::UpdateDXVKConfig() const
+{
+    wchar_t szConfPath[MAX_PATH];
+    if(!Misc::GetGameSystemDir(szConfPath) || !PathAppend(szConfPath, L"dxvk.conf") || !PathFileExists(szConfPath))
+    {
+        return;
+    }
+
+    std::ifstream in(szConfPath, std::ios::binary);
+    if(!in)
+    {
+        return;
+    }
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    const std::string value = std::to_string(GetDlgItemInt(m_hWnd, TXT_FPSLIMIT, nullptr, FALSE));
+    const char* const pszKeys[] = { "dxgi.maxFrameRate", "d3d9.maxFrameRate" };
+    bool bFound[ARRAYSIZE(pszKeys)] = {};
+
+    //Match the file's dominant line ending so any appended keys blend in
+    const char* const pszNewLine = content.find("\r\n") != std::string::npos ? "\r\n" : "\n";
+
+    //Returns the index of the target key a line assigns, even if it's commented out, else -1
+    const auto MatchKey = [&pszKeys](const std::string& line) -> int
+    {
+        size_t i = line.find_first_not_of(" \t");
+        if(i == std::string::npos)
+        {
+            return -1;
+        }
+        if(line[i] == '#') //Activate commented-out defaults as well
+        {
+            i = line.find_first_not_of(" \t", i + 1);
+            if(i == std::string::npos)
+            {
+                return -1;
+            }
+        }
+        for(int k = 0; k < static_cast<int>(ARRAYSIZE(pszKeys)); k++)
+        {
+            const size_t len = strlen(pszKeys[k]);
+            if(line.compare(i, len, pszKeys[k]) == 0)
+            {
+                const size_t eq = line.find_first_not_of(" \t", i + len);
+                if(eq != std::string::npos && line[eq] == '=')
+                {
+                    return k;
+                }
+            }
+        }
+        return -1;
+    };
+
+    std::string result;
+    result.reserve(content.size() + 64);
+
+    for(size_t pos = 0; pos < content.size();)
+    {
+        const size_t nl = content.find('\n', pos);
+        size_t bodyEnd = (nl == std::string::npos) ? content.size() : nl;
+        const char* pszTerm = "";
+        if(nl != std::string::npos)
+        {
+            if(bodyEnd > pos && content[bodyEnd - 1] == '\r')
+            {
+                bodyEnd--;
+                pszTerm = "\r\n";
+            }
+            else
+            {
+                pszTerm = "\n";
+            }
+        }
+
+        const std::string body = content.substr(pos, bodyEnd - pos);
+        const int k = MatchKey(body);
+        if(k >= 0)
+        {
+            result += pszKeys[k];
+            result += " = ";
+            result += value;
+            result += pszTerm;
+            bFound[k] = true;
+        }
+        else
+        {
+            result += body;
+            result += pszTerm;
+        }
+
+        pos = (nl == std::string::npos) ? content.size() : nl + 1;
+    }
+
+    //Add any keys that weren't already present so the limit is actually applied
+    for(int k = 0; k < static_cast<int>(ARRAYSIZE(pszKeys)); k++)
+    {
+        if(!bFound[k])
+        {
+            if(!result.empty() && result.back() != '\n')
+            {
+                result += pszNewLine;
+            }
+            result += pszKeys[k];
+            result += " = ";
+            result += value;
+            result += pszNewLine;
+        }
+    }
+
+    std::ofstream out(szConfPath, std::ios::binary | std::ios::trunc);
+    if(out)
+    {
+        out.write(result.data(), result.size());
+        out.close(); //Flush here, else a write error would only surface in the destructor, after the check below
+    }
+
+    if(!out) //Opening with trunc already emptied the file, so a failure here can't go unreported
+    {
+        assert(GLog);
+        GLog->Logf(L"Deus Exe: failed to write '%s'.", szConfPath);
+    }
 }
 
 INT_PTR CALLBACK CFixApp::FixAppDialogProc(HWND hwndDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
@@ -320,7 +448,6 @@ INT_PTR CALLBACK CFixApp::FixAppDialogProc(HWND hwndDlg,UINT uMsg,WPARAM wParam,
     {
     case WM_INITDIALOG:
         {
-            //Get all object oriented like
             SetProp(hwndDlg,L"this",reinterpret_cast<HANDLE>(lParam));
             pThis =  reinterpret_cast<CFixApp*>(lParam);
             pThis->m_hWnd = hwndDlg;
@@ -332,7 +459,7 @@ INT_PTR CALLBACK CFixApp::FixAppDialogProc(HWND hwndDlg,UINT uMsg,WPARAM wParam,
             pThis->m_hWndTxtResX = GetDlgItem(hwndDlg, TXT_RESX);
             pThis->m_hWndTxtResY = GetDlgItem(hwndDlg, TXT_RESY);
             pThis->m_hWndTxtFOV = GetDlgItem(hwndDlg, TXT_FOV);
-            SendMessage(hwndDlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(reinterpret_cast<HINSTANCE>(GetWindowLong(hwndDlg, GWL_HINSTANCE)), MAKEINTRESOURCE(IDI_ICON))));
+            SendMessage(hwndDlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(reinterpret_cast<HINSTANCE>(GetWindowLongPtr(hwndDlg, GWLP_HINSTANCE)), MAKEINTRESOURCE(IDI_ICON))));
 
             pThis->PopulateDialog();
             pThis->ReadSettings();
@@ -378,6 +505,9 @@ INT_PTR CALLBACK CFixApp::FixAppDialogProc(HWND hwndDlg,UINT uMsg,WPARAM wParam,
 
             case IDOK:
                 pThis->ApplySettings();
+                EndDialog(hwndDlg, 1);
+                return TRUE;
+
             case IDCANCEL:
                 EndDialog(hwndDlg, 0);
                 return TRUE;
@@ -390,6 +520,10 @@ INT_PTR CALLBACK CFixApp::FixAppDialogProc(HWND hwndDlg,UINT uMsg,WPARAM wParam,
     case WM_CLOSE:
         EndDialog(hwndDlg,0);
         return TRUE;
+
+    case WM_NCDESTROY:
+        RemoveProp(hwndDlg, L"this");
+        break;
 
     }
 

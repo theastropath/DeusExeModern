@@ -6,18 +6,19 @@ class CGUIScalingFix : public CNativeHooks::CFixBaseT<CGUIScalingFix, APlayerPaw
 {
 public:
     static const wchar_t* const sm_pszConfigString;
+    static const INT sm_iMaxScale = 5; //Matches what the configuration dialog offers
 
     static void Factory(const wchar_t* const pszIniSection)
     {
         INT i = 0;
         GConfig->GetInt(pszIniSection, sm_pszConfigString, i);
-        if (i)
+        if (i > 0) //A hand-edited negative value would scale the UI by a negative multiplier
         {
-            new CGUIScalingFix(i);
+            new CGUIScalingFix(i > sm_iMaxScale ? sm_iMaxScale : i);
         }
     }
 
-    void ReplacementFunc(const APlayerPawnExt& PlayerPawnThis, CGUIScalingFix& Context, FFrame& Stack, RESULT_DECL);
+    static void ReplacementFunc(const APlayerPawnExt& PlayerPawnThis, CGUIScalingFix& Context, FFrame& Stack, RESULT_DECL);
 
 private:
     explicit CGUIScalingFix(const decltype(XRootWindow::hMultiplier) iScaleAmount);

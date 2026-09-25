@@ -42,7 +42,6 @@ void CGUIScalingFix::ReplacementFunc(const APlayerPawnExt& PlayerPawnThis, CGUIS
                 hMultiplier = Context.m_iScaleAmount;
                 vMultiplier = Context.m_iScaleAmount;
 
-                //Apply changes
                 for (XWindow *pChild = GetBottomChild(); pChild != nullptr; pChild = pChild->GetHigherSibling())
                 {
                     pChild->Hide();
@@ -56,7 +55,10 @@ void CGUIScalingFix::ReplacementFunc(const APlayerPawnExt& PlayerPawnThis, CGUIS
     };
 
     XRootWindow* const pRoot = PlayerPawnThis.rootWindow;
-    assert(pRoot);
+    if (!pRoot || !pCanvas) //Script can pass None
+    {
+        return;
+    }
     RootHack* const pHack = static_cast<RootHack*>(pRoot);
     pHack->ApplyScaling(pCanvas, Context);
 }
