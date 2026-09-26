@@ -65,7 +65,6 @@ The entry point is called once per event, with a context holding the command lin
 ## To Build
 
 * Extract the "Games" directory from the [game headers](https://www.kentie.net/article/d3d10drv/files/src/games.zip) into the root directory of this repository, so that there is a "Games" directory alongside the "DeusExe" directory.  Load the "DeusExe.sln" file in Visual Studio 2022 and use that to compile.
-  * Alternately, you can create a "Games" directory, with a "DeusEx" directory inside that.  Extract the contents of "DxHeaders.zip" which is included with the Deus Ex SDK into the "DeusEx" directory.
 
 
 ## Changelog
