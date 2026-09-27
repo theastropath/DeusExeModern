@@ -11,7 +11,10 @@
 *.userprefs
 
 #Game headers
-[Gg]ames/
+/Games/*
+!/Games/DeusEx/
+/Games/DeusEx/*
+!/Games/DeusEx/.gitkeep
 
 # Build results
 [Dd]ebug/
@@ -27,6 +30,9 @@ bld/
 
 # Visual Studio 2015 cache/options directory
 .vs/
+
+# VSCode options directory
+.vscode/
 
 # MSTest test Results
 [Tt]est[Rr]esult*/
