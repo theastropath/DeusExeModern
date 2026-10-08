@@ -17,6 +17,7 @@
 !/Games/DeusEx/.gitkeep
 
 dist/
+tmp/
 
 # Build results
 [Dd]ebug/
