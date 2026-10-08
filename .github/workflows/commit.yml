@@ -3,7 +3,7 @@ on:
   push:
 
 jobs:
-  BuildRenderers:
+  BuildLauncher:
     runs-on: windows-latest
     steps:
       - name: Check out repository code
