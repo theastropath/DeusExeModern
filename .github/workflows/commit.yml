@@ -34,7 +34,7 @@ jobs:
         shell: bash
 
       - name: Install Python Requirements
-        run: .venv/bin/pip install -r src/requirements.txt 2>&1
+        run: .venv/bin/pip install -r requirements.txt 2>&1
         shell: bash
 
       ########################################
