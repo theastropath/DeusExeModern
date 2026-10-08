@@ -16,6 +16,8 @@
 /Games/DeusEx/*
 !/Games/DeusEx/.gitkeep
 
+dist/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

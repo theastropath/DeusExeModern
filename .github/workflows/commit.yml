@@ -1,0 +1,50 @@
+name: commit
+on:
+  push:
+
+jobs:
+  BuildRenderers:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v7
+
+      - name: Setup MSVC
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x86
+          toolset: 14.44
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - run: python -m venv .venv
+        shell: bash
+
+      # I hate Windows, create a symlink called bin that points to Scripts
+      - name: Create Virtual Environment
+        run: |
+          if [ -d ".venv/Scripts" ] && [ ! -d ".venv/bin" ]; then
+            ln -s Scripts .venv/bin
+          fi
+        if: runner.os == 'Windows'
+        shell: bash
+
+
+      ########################################
+      # Actually build and upload everything #
+      ########################################
+  
+      - name: Build DeusExModern
+        run: .venv/bin/python BuildRelease.py
+        shell: bash
+
+      - name: Upload DeusExeModern.zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: DeusExeModern.zip
+          path: dist/DeusExeModern.zip
+          archive: false

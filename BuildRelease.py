@@ -1,0 +1,112 @@
+# -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+import os
+import sys
+import subprocess
+import shutil
+import errno
+
+#region Clean Directories
+def CleanBuildDirectories(dirs):
+    print("")
+    print("Cleaning Build Directories")
+    print("----------------------------------------------")
+    for dir in dirs:
+        print("Cleaning Directory: "+str(dir))
+        try:
+            shutil.rmtree(dir)
+            print("    Cleaned")
+        except OSError as e:
+            if (e.errno==errno.ENOENT):
+                print("    Already Clean")
+            else:
+                print("    Failed to clean directory: %s" % (e.strerror))
+#endregion
+
+#region Build DeusExe
+def BuildDeusExe(basedir):
+    result = False
+    buildscript = basedir / 'build.ps1'
+    print(buildscript)
+
+    #Always build the Release configuration
+    cmd = 'powershell.exe -file '+str(buildscript)+' -Configuration "Release"'
+
+    p = subprocess.Popen(cmd, shell=True)
+    stdout, stderr = p.communicate()
+
+    if (p.returncode==0):
+        print("Build Succeeded")
+        result = True
+    else:
+        print("Build Failed!")
+        result = False
+
+    return result
+#endregion
+
+#region Collect Results
+def CopyFile(srcFile,destFile):
+    print(str(srcFile) + " ---> " + str(destFile))
+    shutil.copy2(srcFile, destFile)
+
+
+def CollectBuildResults(basedir):
+    print("")
+    print("Collecting build results...")
+
+    releasedir = basedir / "Release"
+    #Make sure the output directory exists (or create it if not)
+    distdir = basedir / "dist"
+
+    create = True
+    if (os.path.exists(distdir)):
+        if (os.path.isdir(distdir)):
+            create=False
+            print(str(distdir)+" exists already")
+        else:
+            print(str(distdir)+" exists, but it's a file???")
+            distdir.unlink()
+
+    if create:
+        os.mkdir(distdir)
+        print("Created "+str(distdir))
+
+    CopyFile(releasedir / "deusex.exe", distdir / "DeusEx.exe")
+    CopyFile(basedir / "SubtitleFix.u", distdir / "SubtitleFix.u")
+
+    #Zip the contents up
+    shutil.make_archive(basedir/'DeusExeModern','zip',distdir)
+    print("Packaged DeusExeModern into ZIP")
+    shutil.move(basedir / 'DeusExeModern.zip',distdir/'DeusExeModern.zip')
+
+#endregion
+
+#-----------------------------------------------#
+
+
+#region Run Build
+
+#The location of this python file
+base = Path(sys.argv[0]).parents[0]
+
+
+#Clean output directories
+builddirs = []
+builddirs.append(base / "Release") #Build product directory
+builddirs.append(base / "Debug")   #Debug build product directory
+builddirs.append(base /  "_work")  #compile stuff
+builddirs.append(base /  "dist")  #distributable stuff
+#Actually clean them
+CleanBuildDirectories(builddirs)
+
+result = BuildDeusExe(base)
+
+if (result==False):
+    sys.exit(1)
+
+CollectBuildResults(base)
+
+sys.exit(0)
+
+#endregion
