@@ -29,9 +29,14 @@ void CGUIScalingFix::ReplacementFunc(const APlayerPawnExt& PlayerPawnThis, CGUIS
                 ResizeRoot(pCanvas);
 
                 //Change our size; children will align themselves properly
-                const float fScaleAmount = static_cast<float>(Context.m_iScaleAmount);
-                width *= hMultiplier/fScaleAmount;
-                height *= vMultiplier/fScaleAmount;
+                width = static_cast<FLOAT>(pCanvas->X / Context.m_iScaleAmount);
+                height = static_cast<FLOAT>(pCanvas->Y / Context.m_iScaleAmount);
+
+                if (Misc::IsVerboseLogging()) //Before the multipliers are overwritten below, so the engine's own choice is still readable
+                {
+                    GLog->Logf(L"GUIScalingFix: canvas %ix%i, engine scaling %ix%i, configured scale x%i, root window %.0fx%.0f.",
+                        pCanvas->X, pCanvas->Y, hMultiplier, vMultiplier, Context.m_iScaleAmount, width, height);
+                }
 
                 clipRect.clipWidth = width;
                 clipRect.clipHeight = height;
