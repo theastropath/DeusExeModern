@@ -729,6 +729,24 @@ void CLauncher::LoadSettings()
         iFPSLimit = 0;
     }
     m_fFPSLimit = static_cast<float>(iFPSLimit);
+    
+    //If the renderer has its own framelimiter (key FrameRateLimit), hand over the framelimiting to it
+    //Turn off the launcher's own framelimiter so only one will handle idle sleeping
+    wchar_t szRenderer[128];
+    const wchar_t* const pszConfiguredRenderer = GConfig->GetStr(L"Engine.Engine", L"GameRenderDevice");
+    wcsncpy_s(szRenderer, pszConfiguredRenderer[0] != '\0' ? pszConfiguredRenderer : L"SoftDrv.SoftwareRenderDevice", _TRUNCATE);
+
+    for(const wchar_t* const pszLimitKey : { L"FrameRateLimit", L"FPSLimit" })
+    {
+        INT iRendererLimit = 0;
+        if(GConfig->GetInt(szRenderer, pszLimitKey, iRendererLimit))
+        {
+            GConfig->SetInt(szRenderer, pszLimitKey, iFPSLimit);
+            m_fFPSLimit = 0.0f;
+            GLog->Logf(L"Deus Exe: frame limit of %i handed to '%s' (%s); the launcher's own limiter is off.", iFPSLimit, szRenderer, pszLimitKey);
+            break;
+        }
+    }
 
     GConfig->GetBool(PROJECTNAME, L"RawInput", m_bRawInput);
     GConfig->GetBool(PROJECTNAME, L"UseAutoFOV", m_bAutoFov);
