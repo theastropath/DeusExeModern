@@ -16,6 +16,8 @@ namespace CrashReport
 {
     void Setup(); //!< Installs the exception, terminate and invalid-parameter handlers; call before anything else
 
+    void SetLogFile(const wchar_t* const pszLogPath, const int iKeep); //!< The log to copy aside when a crash is reported, and how many copies to keep in total; call once the log is open
+
     void SetScriptTrace(const UObject* const pObject, const UStruct* const pFunction);
 
     void SetPhase(const wchar_t* const pszPhase); //!< Engine stage (slow task/status update) a crash would be attributed to

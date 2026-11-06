@@ -61,6 +61,11 @@ INT WINAPI WinMain(HINSTANCE /*hInInstance*/, HINSTANCE /*hPrevInstance*/, LPSTR
         GLog->Log(L"Failed to set process DEP flags.");
     }
 
+    int iCrashLogCount = 10;
+    GConfig->GetInt(PROJECTNAME, L"CrashLogCount", iCrashLogCount);
+    wchar_t szLogPath[MAX_PATH];
+    CrashReport::SetLogFile(pFileManager->ToModernFileName(szLogPath, Log.Filename, 'w') ? szLogPath : Log.Filename, iCrashLogCount);
+
     Plugins.Dispatch(DeusExePluginEvent_PostAppInit);
 
     pFileManager->AfterCoreInit();
