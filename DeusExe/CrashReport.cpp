@@ -39,6 +39,10 @@ namespace
     bool g_bHaveFault = false;
     bool g_bReporting = false; //Reporting walks memory the crash already corrupted, so it must not record its own faults
 
+    wchar_t g_szLogPath[MAX_PATH] = {};
+    wchar_t g_szCrashLogPath[MAX_PATH] = {}; //'<log name>Crash.log' beside it
+    int g_iCrashLogsKept = 0;
+
     const INT g_iMaxObjectIndex = 262144; //The object table is walked by index, so this caps a corrupt one
 
     double SecondsSince(const ULONGLONG iTicks)
@@ -550,6 +554,96 @@ namespace
         }
     }
 
+    //Deletes the oldest timestamped copy
+    void PruneCrashLogs(const wchar_t* const pszStem, const int iMaxArchived)
+    {
+        wchar_t szSearch[MAX_PATH];
+        if(_snwprintf_s(szSearch, _TRUNCATE, L"%s-*.log", pszStem) < 0)
+        {
+            return;
+        }
+
+        static wchar_t szNames[32][MAX_PATH];
+        int iNames = 0;
+
+        WIN32_FIND_DATA FindData;
+        const HANDLE hFind = FindFirstFile(szSearch, &FindData);
+        if(hFind == INVALID_HANDLE_VALUE)
+        {
+            return;
+        }
+        do
+        {
+            //Search for logs in the folder
+            if((FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && _wcsicmp(PathFindExtension(FindData.cFileName), L".log") == 0)
+            {
+                wcsncpy_s(szNames[iNames++], FindData.cFileName, _TRUNCATE);
+            }
+        } while(iNames < static_cast<int>(_countof(szNames)) && FindNextFile(hFind, &FindData) != FALSE);
+        FindClose(hFind);
+
+        wchar_t szDir[MAX_PATH];
+        wcsncpy_s(szDir, pszStem, _TRUNCATE);
+        PathRemoveFileSpec(szDir);
+
+        for(; iNames > iMaxArchived; iNames--)
+        {
+            int iOldest = 0;
+            for(int i = 1; i < iNames; i++)
+            {
+                if(_wcsicmp(szNames[i], szNames[iOldest]) < 0)
+                {
+                    iOldest = i;
+                }
+            }
+
+            wchar_t szPath[MAX_PATH];
+            if(PathCombine(szPath, szDir, szNames[iOldest]) != nullptr)
+            {
+                DeleteFile(szPath);
+            }
+            if(iOldest != iNames - 1)
+            {
+                wcsncpy_s(szNames[iOldest], szNames[iNames - 1], _TRUNCATE);
+            }
+        }
+    }
+
+    void SaveCrashLog()
+    {
+        if(g_iCrashLogsKept <= 0 || g_szCrashLogPath[0] == 0)
+        {
+            return;
+        }
+
+        wchar_t szStem[MAX_PATH];
+        wcsncpy_s(szStem, g_szCrashLogPath, _TRUNCATE);
+        PathRemoveExtension(szStem);
+
+        //Move the previous crashlog copy under the time it was written, so the newest is always at the same name
+        WIN32_FILE_ATTRIBUTE_DATA Attributes;
+        FILETIME LocalTime;
+        SYSTEMTIME Time;
+        if(GetFileAttributesEx(g_szCrashLogPath, GetFileExInfoStandard, &Attributes) != FALSE
+            && FileTimeToLocalFileTime(&Attributes.ftLastWriteTime, &LocalTime) != FALSE
+            && FileTimeToSystemTime(&LocalTime, &Time) != FALSE)
+        {
+            wchar_t szArchived[MAX_PATH];
+            if(_snwprintf_s(szArchived, _TRUNCATE, L"%s-%04u%02u%02u-%02u%02u%02u.log", szStem,
+                Time.wYear, Time.wMonth, Time.wDay, Time.wHour, Time.wMinute, Time.wSecond) >= 0)
+            {
+                MoveFileEx(g_szCrashLogPath, szArchived, MOVEFILE_REPLACE_EXISTING);
+            }
+        }
+
+        if(CopyFile(g_szLogPath, g_szCrashLogPath, FALSE) == FALSE)
+        {
+            LogDetail(L"  Failed to copy the log to '%s' (error %u).", g_szCrashLogPath, GetLastError());
+        }
+
+        PruneCrashLogs(szStem, g_iCrashLogsKept - 1);
+    }
+
     void ReportFatal(const wchar_t* const pszReason, const EXCEPTION_POINTERS* const pExceptionInfo)
     {
         if(g_bReporting) //A second fault while reporting would otherwise loop through the handlers below
@@ -742,12 +836,36 @@ void CrashReport::LogFault(const EXCEPTION_POINTERS* const pExceptionInfo)
 
         LogDetail(L"--- Loaded modules ---");
         LogModules();
+        SaveCrashLog();
     }
     __except(EXCEPTION_EXECUTE_HANDLER)
     {
     }
 
     g_bReporting = bWasReporting;
+}
+
+void CrashReport::SetLogFile(const wchar_t* const pszLogPath, const int iKeep)
+{
+    g_szLogPath[0] = 0;
+    g_szCrashLogPath[0] = 0;
+    g_iCrashLogsKept = iKeep;
+
+    if(pszLogPath == nullptr || pszLogPath[0] == 0 || iKeep <= 0)
+    {
+        return;
+    }
+
+    wcsncpy_s(g_szLogPath, pszLogPath, _TRUNCATE);
+
+    //Append crash to the name
+    wchar_t szStem[MAX_PATH];
+    wcsncpy_s(szStem, pszLogPath, _TRUNCATE);
+    PathRemoveExtension(szStem);
+    if(_snwprintf_s(g_szCrashLogPath, _TRUNCATE, L"%sCrash.log", szStem) < 0)
+    {
+        g_szCrashLogPath[0] = 0; //Doesn't fit, so there is nowhere to copy to
+    }
 }
 
 void CrashReport::SetScriptTrace(const UObject* const pObject, const UStruct* const pFunction)
