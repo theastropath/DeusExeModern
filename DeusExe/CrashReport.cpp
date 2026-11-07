@@ -40,7 +40,6 @@ namespace
     bool g_bReporting = false; //Reporting walks memory the crash already corrupted, so it must not record its own faults
 
     wchar_t g_szLogPath[MAX_PATH] = {};
-    wchar_t g_szCrashLogPath[MAX_PATH] = {}; //'<log name>Crash.log' beside it
     int g_iCrashLogsKept = 0;
 
     const INT g_iMaxObjectIndex = 262144; //The object table is walked by index, so this caps a corrupt one
@@ -558,7 +557,7 @@ namespace
     void PruneCrashLogs(const wchar_t* const pszStem, const int iMaxArchived)
     {
         wchar_t szSearch[MAX_PATH];
-        if(_snwprintf_s(szSearch, _TRUNCATE, L"%s-*.log", pszStem) < 0)
+        if(_snwprintf_s(szSearch, _TRUNCATE, L"%sCrash-*.log", pszStem) < 0)
         {
             return;
         }
@@ -611,37 +610,34 @@ namespace
 
     void SaveCrashLog()
     {
-        if(g_iCrashLogsKept <= 0 || g_szCrashLogPath[0] == 0)
+        if(g_iCrashLogsKept <= 0 || g_szLogPath[0] == 0)
         {
             return;
         }
 
         wchar_t szStem[MAX_PATH];
-        wcsncpy_s(szStem, g_szCrashLogPath, _TRUNCATE);
+        wcsncpy_s(szStem, g_szLogPath, _TRUNCATE);
         PathRemoveExtension(szStem);
 
-        //Move the previous crashlog copy under the time it was written, so the newest is always at the same name
-        WIN32_FILE_ATTRIBUTE_DATA Attributes;
-        FILETIME LocalTime;
+        //Save the crashlog with the timestamp included in the name
         SYSTEMTIME Time;
-        if(GetFileAttributesEx(g_szCrashLogPath, GetFileExInfoStandard, &Attributes) != FALSE
-            && FileTimeToLocalFileTime(&Attributes.ftLastWriteTime, &LocalTime) != FALSE
-            && FileTimeToSystemTime(&LocalTime, &Time) != FALSE)
+        wchar_t szCrashLogPath[MAX_PATH];
+
+        GetLocalTime(&Time);
+
+        if(_snwprintf_s(szCrashLogPath, _TRUNCATE, L"%sCrash-%04u%02u%02u-%02u%02u%02u.log", szStem,
+            Time.wYear, Time.wMonth, Time.wDay, Time.wHour, Time.wMinute, Time.wSecond) >= 0)
         {
-            wchar_t szArchived[MAX_PATH];
-            if(_snwprintf_s(szArchived, _TRUNCATE, L"%s-%04u%02u%02u-%02u%02u%02u.log", szStem,
-                Time.wYear, Time.wMonth, Time.wDay, Time.wHour, Time.wMinute, Time.wSecond) >= 0)
+            //Figured out a good name with a timestamp
+            if(CopyFile(g_szLogPath, szCrashLogPath, FALSE) == FALSE)
             {
-                MoveFileEx(g_szCrashLogPath, szArchived, MOVEFILE_REPLACE_EXISTING);
+                LogDetail(L"  Failed to copy the log to '%s' (error %u).", szCrashLogPath, GetLastError());
             }
+        } else {
+            LogDetail(L"  Failed to create timestamp for crashlog.");
         }
 
-        if(CopyFile(g_szLogPath, g_szCrashLogPath, FALSE) == FALSE)
-        {
-            LogDetail(L"  Failed to copy the log to '%s' (error %u).", g_szCrashLogPath, GetLastError());
-        }
-
-        PruneCrashLogs(szStem, g_iCrashLogsKept - 1);
+        PruneCrashLogs(szStem, g_iCrashLogsKept);
     }
 
     void ReportFatal(const wchar_t* const pszReason, const EXCEPTION_POINTERS* const pExceptionInfo)
@@ -848,7 +844,6 @@ void CrashReport::LogFault(const EXCEPTION_POINTERS* const pExceptionInfo)
 void CrashReport::SetLogFile(const wchar_t* const pszLogPath, const int iKeep)
 {
     g_szLogPath[0] = 0;
-    g_szCrashLogPath[0] = 0;
     g_iCrashLogsKept = iKeep;
 
     if(pszLogPath == nullptr || pszLogPath[0] == 0 || iKeep <= 0)
@@ -857,15 +852,6 @@ void CrashReport::SetLogFile(const wchar_t* const pszLogPath, const int iKeep)
     }
 
     wcsncpy_s(g_szLogPath, pszLogPath, _TRUNCATE);
-
-    //Append crash to the name
-    wchar_t szStem[MAX_PATH];
-    wcsncpy_s(szStem, pszLogPath, _TRUNCATE);
-    PathRemoveExtension(szStem);
-    if(_snwprintf_s(g_szCrashLogPath, _TRUNCATE, L"%sCrash.log", szStem) < 0)
-    {
-        g_szCrashLogPath[0] = 0; //Doesn't fit, so there is nowhere to copy to
-    }
 }
 
 void CrashReport::SetScriptTrace(const UObject* const pObject, const UStruct* const pFunction)
