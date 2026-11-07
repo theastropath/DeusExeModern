@@ -1,6 +1,7 @@
 name: commit
 on:
   push:
+  pull_request:
 
 jobs:
   BuildLauncher:
