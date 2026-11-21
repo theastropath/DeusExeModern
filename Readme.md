@@ -69,6 +69,11 @@ The entry point is called once per event, with a context holding the command lin
 
 ## Changelog
 
+### Version 9.0.2.0 (November 21, 2026)
+
+* The frame limiter in Deus Exe will be disabled if the renderer is also using a frame limiter (Using a "FrameRateLimit" or "FPSLimit" config option) so that the frame rate won't try to be limited twice.
+* When the game crashes, a timestamped copy of the log will be created next to the original log file (For example, "DeusExCrash-20261121-140233.log") so that it won't be overwritten when the game is opened again.  Up to 10 of these logs will be kept, after which the oldest one will be deleted.
+
 ### Version 9.0.1.0 (september 18, 2026)
 
 * Added an 'Open save folder' link to the launcher, which opens the directory holding the configuration data and save games, following `-localdata` and `-gamename`. Under WINE/Proton it opens the desktop's own file manager rather than WINE's.
